@@ -332,19 +332,37 @@ async def get_status_by_coordinates(
 ):
     """Resolve outage status for a house corresponding to geographic coordinates."""
     import httpx
-    # Query Nominatim API for reverse geocoding
+    # List of public reverse geocoding instances to try
+    geocoder_urls = [
+        f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat}&lon={lon}&zoom=18&addressdetails=1",
+        f"https://nominatim.openstreetmap.fr/reverse?format=jsonv2&lat={lat}&lon={lon}&zoom=18&addressdetails=1"
+    ]
+    
+    geo_data = None
+    last_err = None
+    
     async with httpx.AsyncClient(timeout=10.0) as client:
         headers = {
-            "User-Agent": "SvitloLocator/1.0 (contact: info@svitlo-finder.xyz)"
+            "User-Agent": "SvitloLocatorApp/1.1 (contact: admin@svitlo-finder.xyz; educational wrapper API)"
         }
-        url = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat}&lon={lon}&zoom=18&addressdetails=1"
-        try:
-            r = await client.get(url, headers=headers)
-            r.raise_for_status()
-            geo_data = r.json()
-        except Exception as e:
-            logger.error(f"Nominatim reverse geocoding failed: {e}")
-            raise HTTPException(status_code=502, detail="Failed to resolve address from coordinates via Nominatim.")
+        for url in geocoder_urls:
+            try:
+                r = await client.get(url, headers=headers)
+                r.raise_for_status()
+                geo_data = r.json()
+                if geo_data and "address" in geo_data:
+                    logger.info(f"Successfully resolved address using geocoder: {url}")
+                    break
+            except Exception as e:
+                logger.warning(f"Geocoder {url} failed: {e}")
+                last_err = e
+
+    if not geo_data:
+        err_msg = f"Failed to resolve address from coordinates via Nominatim. Error details: {str(last_err)}"
+        if last_err and hasattr(last_err, 'response') and last_err.response:
+            err_msg += f" (Status code: {last_err.response.status_code}, Body: {last_err.response.text[:200]})"
+        logger.error(err_msg)
+        raise HTTPException(status_code=502, detail=err_msg)
 
     address = geo_data.get("address", {})
     
