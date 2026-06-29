@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SvitloLocator - 1km Radius Blackout Map</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(17, 25, 40, 0.85);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --primary: #f97316;
+            --primary-hover: #ea580c;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --status-on: #f97316; /* Orange */
+            --status-off: #111827; /* Black */
+            --status-unknown: #4b5563; /* Grey */
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        #map {
+            flex: 1;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* Sidebar Panel */
+        .sidebar {
+            width: 420px;
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-left: 1px solid var(--card-border);
+            height: 100%;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+            box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+            overflow-y: auto;
+        }
+
+        h1 {
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            background: linear-gradient(135deg, #fb923c 0%, #f97316 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p.description {
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.5;
+            margin-bottom: 20px;
+        }
+
+        .status-box {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .status-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-log {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.6;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-bottom: 12px;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.02);
+        }
+
+        .log-item {
+            margin-bottom: 4px;
+            border-bottom: 1px dashed rgba(255, 255, 255, 0.02);
+            padding-bottom: 4px;
+        }
+
+        .log-item:last-child {
+            border-bottom: none;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-top: 14px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 12px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .stat-val {
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .stat-val.orange {
+            color: #fb923c;
+        }
+
+        .stat-val.black {
+            color: #9ca3af;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* Legend Panel */
+        .legend-box {
+            margin-top: auto;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            padding-top: 20px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+            font-size: 13px;
+        }
+
+        .legend-color {
+            width: 24px;
+            height: 14px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .legend-color.on {
+            background-color: var(--primary);
+            border-color: #ea580c;
+        }
+
+        .legend-color.off {
+            background-color: #111827;
+            border-color: #374151;
+        }
+
+        .legend-color.unknown {
+            background-color: var(--status-unknown);
+            border-color: #4b5563;
+        }
+
+        /* Progress Bar */
+        .progress-container {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background: var(--primary);
+            transition: width 0.3s ease;
+        }
+
+        /* Spinner */
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Leaflet popup customization */
+        .leaflet-popup-content-wrapper {
+            background: var(--card-bg) !important;
+            color: var(--text-main) !important;
+            backdrop-filter: blur(10px) !important;
+            border: 1px solid var(--card-border) !important;
+            border-radius: 12px !important;
+            font-family: 'Inter', sans-serif !important;
+        }
+        .leaflet-popup-tip {
+            background: var(--card-bg) !important;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Leaflet Map -->
+    <div id="map"></div>
+
+    <!-- Sidebar Panel -->
+    <div class="sidebar">
+        <h1>SvitloLocator</h1>
+        <p class="description">
+            **1км Радіусний Огляд.** Натисніть у будь-якій точці карти. Додаток автоматично завантажить контури всіх будівель у радіусі 1 км та розфарбує їх в **помаранчевий** (зі світлом) або **чорний** (без світла) кольори, використовуючи лише наше API та розумне розповсюдження.
+        </p>
+
+        <!-- Status Box -->
+        <div class="status-box">
+            <div class="status-title">
+                <span id="status-title-text">Очікування натискання на карту</span>
+                <span class="spinner" id="spinner" style="display: none;"></span>
+            </div>
+            
+            <div class="status-log" id="status-log">
+                <div class="log-item">Натисніть на карту для початку сканування.</div>
+            </div>
+
+            <div class="progress-container" id="progress-container">
+                <div class="progress-bar" id="progress-bar"></div>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-val orange" id="stat-on">0</div>
+                    <div class="stat-label">Зі світлом</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-val black" id="stat-off">0</div>
+                    <div class="stat-label">Без світла</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="legend-box">
+            <div class="legend-item">
+                <div class="legend-color on"></div>
+                <span>Є світло (Помаранчевий)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color off"></div>
+                <span>Немає світла (Чорний)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color unknown"></div>
+                <span>Статус невідомий / Інша мережа</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script>
+        // Initialize Map
+        const map = L.map('map', {
+            center: [50.4303924, 30.3372671], // Solomyanska Street area
+            zoom: 15,
+            zoomControl: false
+        });
+
+        // Add Zoom Control at bottom right
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        // Add Dark Matter Tile Server
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
+        }).addTo(map);
+
+        let clickMarker = null;
+        let radiusCircle = null;
+        let buildingPolygonsLayer = L.layerGroup().addTo(map);
+        let activeRequests = false;
+
+        map.on('click', async (e) => {
+            if (activeRequests) return;
+            const lat = e.latlng.lat;
+            const lon = e.latlng.lng;
+            await runRadiusScan(lat, lon);
+        });
+
+        async function runRadiusScan(lat, lon) {
+            activeRequests = true;
+            document.getElementById('spinner').style.display = 'inline-block';
+            document.getElementById('status-title-text').textContent = 'Сканування радіусу...';
+            document.getElementById('progress-container').style.display = 'block';
+            document.getElementById('progress-bar').style.width = '0%';
+            
+            const logBox = document.getElementById('status-log');
+            logBox.innerHTML = '';
+            addLogItem('Отримано координати кліку. Запуск 1км радіусного скану.');
+
+            // Clear previous layer
+            buildingPolygonsLayer.clearLayers();
+            if (clickMarker) map.removeLayer(clickMarker);
+            if (radiusCircle) map.removeLayer(radiusCircle);
+
+            // Draw center and radius
+            clickMarker = L.marker([lat, lon]).addTo(map);
+            radiusCircle = L.circle([lat, lon], {
+                radius: 1000,
+                color: '#fb923c',
+                weight: 1,
+                fill: true,
+                fillColor: '#fb923c',
+                fillOpacity: 0.03,
+                dashArray: '5, 5'
+            }).addTo(map);
+
+            // Zoom map to fit the 1km circle
+            map.fitBounds(radiusCircle.getBounds());
+
+            try {
+                addLogItem('Запит до OpenStreetMap Overpass API для пошуку будівель...');
+                const overpassUrl = `https://overpass-api.de/api/interpreter?data=[out:json];way(around:1000,${lat},${lon})["addr:housenumber"]["addr:street"];out geom;`;
+                
+                const response = await fetch(overpassUrl);
+                if (!response.ok) throw new Error('Помилка запиту до Overpass API.');
+                
+                const data = await response.json();
+                const buildings = data.elements || [];
+                addLogItem(`Знайдено ${buildings.length} будівель з адресами у радіусі.`);
+
+                if (buildings.length === 0) {
+                    addLogItem('У цьому радіусі немає зареєстрованих будівель з адресами.');
+                    resetUIState();
+                    return;
+                }
+
+                // 1. Calculate distances from center to each building centroid
+                buildings.forEach(b => {
+                    const center = getCentroid(b.geometry);
+                    b.centroid = center;
+                    b.distance = getDistance(lat, lon, center.lat, center.lon);
+                });
+
+                // Sort by distance (closest first)
+                buildings.sort((a, b) => a.distance - b.distance);
+
+                // 2. Group buildings by street to select representative houses per street
+                const buildingsByStreet = {};
+                buildings.forEach(b => {
+                    const street = b.tags['addr:street'];
+                    if (!buildingsByStreet[street]) buildingsByStreet[street] = [];
+                    buildingsByStreet[street].push(b);
+                });
+
+                const uniqueToQuery = [];
+                const queriedKeys = new Set();
+
+                // Select up to 3 closest houses for EACH street in the 1km radius
+                // This ensures every street is covered!
+                for (const street in buildingsByStreet) {
+                    const streetBuildings = buildingsByStreet[street];
+                    let count = 0;
+                    for (const b of streetBuildings) {
+                        const house = b.tags['addr:housenumber'];
+                        const key = `${street}||${house}`;
+                        if (!queriedKeys.has(key)) {
+                            queriedKeys.add(key);
+                            uniqueToQuery.push({ street, house });
+                            count++;
+                            if (count >= 3) break; // select up to 3 houses per street
+                        }
+                    }
+                }
+
+                addLogItem(`Виділено ${uniqueToQuery.length} адрес для запиту (покриваємо всі вулиці у радіусі).`);
+                document.getElementById('progress-bar').style.width = '10%';
+
+                // 3. Resolve status of the unique houses via our new POST /api/v1/status/batch endpoint
+                addLogItem('Відправляємо пакетний запит статусів до нашого API...');
+                
+                const batchItems = uniqueToQuery.map(item => ({
+                    streetName: item.street,
+                    houseName: item.house
+                }));
+
+                const batchRes = await fetch('/api/v1/status/batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(batchItems)
+                });
+
+                if (!batchRes.ok) throw new Error('Помилка виконання пакетного запиту статусів.');
+                const batchResults = await batchRes.json();
+
+                const resolvedStatuses = {}; // key: street||house -> status
+                const streetStatuses = {}; // key: street -> list of {houseNum, status}
+
+                batchResults.forEach(item => {
+                    const key = `${item.streetName}||${item.houseName}`;
+                    const status = item.status || 'UNKNOWN';
+                    resolvedStatuses[key] = status;
+
+                    if (!streetStatuses[item.streetName]) streetStatuses[item.streetName] = [];
+                    streetStatuses[item.streetName].push({
+                        houseNum: parseHouseNum(item.houseName),
+                        status: status
+                    });
+                });
+
+                addLogItem('Пакетний запит завершено. Проводимо екстраполяцію по вулицях...');
+                document.getElementById('progress-bar').style.width = '90%';
+
+                // 4. Extrapolate statuses for all buildings based on the closest resolved house on the same street
+                let countOn = 0;
+                let countOff = 0;
+
+                buildings.forEach(b => {
+                    const street = b.tags['addr:street'];
+                    const house = b.tags['addr:housenumber'];
+                    const key = `${street}||${house}`;
+                    
+                    let status = 'UNKNOWN';
+                    let mappingType = 'unknown';
+
+                    if (resolvedStatuses[key] && resolvedStatuses[key] !== 'UNKNOWN') {
+                        status = resolvedStatuses[key];
+                        mappingType = 'direct';
+                    } else if (streetStatuses[street]) {
+                        // Filter out UNKNOWN statuses for extrapolation if possible
+                        const validStreetStatuses = streetStatuses[street].filter(s => s.status !== 'UNKNOWN');
+                        const listToUse = validStreetStatuses.length > 0 ? validStreetStatuses : streetStatuses[street];
+                        
+                        if (listToUse.length > 0) {
+                            // Find closest house on the same street
+                            const targetNum = parseHouseNum(house);
+                            let minDiff = Infinity;
+                            let bestStatus = 'UNKNOWN';
+                            
+                            listToUse.forEach(item => {
+                                const diff = Math.abs(item.houseNum - targetNum);
+                                if (diff < minDiff) {
+                                    minDiff = diff;
+                                    bestStatus = item.status;
+                                }
+                            });
+                            status = bestStatus;
+                            mappingType = 'propagated';
+                        }
+                    }
+
+                    // Increment stats
+                    if (status === 'ON') countOn++;
+                    else if (status === 'OFF' || status === 'EMERGENCY') countOff++;
+
+                    // Render polygon
+                    const coordinates = b.geometry.map(pt => [pt.lat, pt.lon]);
+                    
+                    let color = '#4b5563'; // Grey (unknown)
+                    let fillColor = '#4b5563';
+                    let fillOpacity = 0.5;
+
+                    if (status === 'ON') {
+                        color = '#ea580c'; // Orange border
+                        fillColor = '#f97316'; // Orange fill
+                        fillOpacity = 0.8;
+                    } else if (status === 'OFF' || status === 'EMERGENCY') {
+                        color = '#374151'; // Dark border
+                        fillColor = '#111827'; // Black fill
+                        fillOpacity = 0.95;
+                    }
+
+                    const poly = L.polygon(coordinates, {
+                        color: color,
+                        weight: 1,
+                        fillColor: fillColor,
+                        fillOpacity: fillOpacity
+                    });
+
+                    // Add Tooltip/Popup details
+                    const statusLabel = status === 'ON' ? 'СВІТЛО Є' : (status === 'UNKNOWN' ? 'Невідомо' : 'НЕМАЄ СВІТЛА');
+                    const mappingLabel = mappingType === 'direct' ? 'Прямий запит' : (mappingType === 'propagated' ? 'Екстрапольовано' : 'Невідомо');
+                    
+                    poly.bindPopup(`
+                        <div style="font-size: 12px; line-height: 1.4;">
+                            <div style="font-weight: 700; margin-bottom: 4px; color: ${status === 'ON' ? '#fb923c' : '#f3f4f6'};">
+                                ${street}, ${house}
+                            </div>
+                            <div style="color: #9ca3af; font-size: 11px;">
+                                Статус: <strong>${statusLabel}</strong>
+                            </div>
+                            <div style="color: #6b7280; font-size: 10px; margin-top: 2px;">
+                                Джерело: ${mappingLabel}
+                            </div>
+                        </div>
+                    `);
+                    
+                    buildingPolygonsLayer.addLayer(poly);
+                });
+
+                document.getElementById('progress-bar').style.width = '100%';
+                document.getElementById('stat-on').textContent = countOn;
+                document.getElementById('stat-off').textContent = countOff;
+                
+                addLogItem(`Успішно нанесено на карту. Будівель зі світлом: ${countOn}, без світла: ${countOff}.`);
+                document.getElementById('status-title-text').textContent = 'Аналіз завершено';
+
+            } catch (err) {
+                addLogItem(`Помилка під час аналізу: ${err.message}`);
+                document.getElementById('status-title-text').textContent = 'Помилка аналізу';
+            } finally {
+                activeRequests = false;
+                document.getElementById('spinner').style.display = 'none';
+                setTimeout(() => {
+                    document.getElementById('progress-container').style.display = 'none';
+                }, 1000);
+            }
+        }
+
+        // Helpers
+        function addLogItem(text) {
+            const logBox = document.getElementById('status-log');
+            const item = document.createElement('div');
+            item.className = 'log-item';
+            item.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+            logBox.appendChild(item);
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        function getCentroid(pts) {
+            let latSum = 0, lonSum = 0;
+            pts.forEach(pt => {
+                latSum += pt.lat;
+                lonSum += pt.lon;
+            });
+            return { lat: latSum / pts.length, lon: lonSum / pts.length };
+        }
+
+        function getDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371000; // Earth's radius in meters
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+
+        function parseHouseNum(houseStr) {
+            const match = houseStr.match(/\d+/);
+            return match ? parseInt(match[0]) : 1;
+        }
+
+        function resetUIState() {
+            activeRequests = false;
+            document.getElementById('spinner').style.display = 'none';
+            document.getElementById('progress-container').style.display = 'none';
+        }
+    </script>
+</body>
+</html>

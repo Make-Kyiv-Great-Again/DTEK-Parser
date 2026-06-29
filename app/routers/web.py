@@ -18,3 +18,8 @@ async def read_root(request: Request):
 async def read_status_coordinates_demo(request: Request):
     """Render the coordinates-based geolocation map demo page."""
     return templates.TemplateResponse(request, "status_coordinates_demo.html")
+
+@router.get("/RadiusOutages/Demo", response_class=HTMLResponse)
+async def read_radius_outages_demo(request: Request):
+    """Render the 1km radius neighborhood outage mapping demo page."""
+    return templates.TemplateResponse(request, "radius_outages_demo.html")

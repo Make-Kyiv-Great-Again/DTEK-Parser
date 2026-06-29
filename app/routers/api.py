@@ -118,15 +118,102 @@ async def get_houses(
 
 @router.get("/status", response_model=StatusResponse)
 async def get_status(
-    regionId: int = Query(...),
-    streetId: int = Query(...),
-    houseId: int = Query(...),
-    dsoId: int = Query(...),
+    regionId: Optional[int] = Query(None),
+    streetId: Optional[int] = Query(None),
+    houseId: Optional[int] = Query(None),
+    dsoId: Optional[int] = Query(None),
     streetName: Optional[str] = Query(None),
     houseName: Optional[str] = Query(None)
 ):
     """Retrieve group details, planned schedule, and current outage status for a house."""
-    # 1. Determine group information & live status
+    # 1. Resolve missing IDs if streetName and houseName are provided
+    if (regionId is None or streetId is None or houseId is None or dsoId is None) and (streetName and houseName):
+        if regionId is None:
+            regionId = 25
+        if dsoId is None:
+            dsoId = 902
+
+        # Clean street name
+        def clean_street_name(name: str) -> str:
+            name = re.sub(r'\s*\(.*?\)\s*', ' ', name)
+            name = re.sub(r'^(вулиця|вул\.|проспект|пр\.|провулок|пров\.|площа|майдан|бульвар|бул\.|шосе|дорога)\s+', '', name, flags=re.IGNORECASE)
+            name = re.sub(r'\s+(вулиця|вул\.|проспект|пр\.|провулок|пров\.|площа|майдан|бульвар|бул\.|шосе|дорога)$', '', name, flags=re.IGNORECASE)
+            name = re.sub(r'\s+', ' ', name)
+            return name.strip()
+
+        cleaned_st = clean_street_name(streetName)
+
+        # Search street in Yasno
+        streets = await yasno_client.search_streets(regionId, cleaned_st, dsoId)
+        apostrophes = ["'", "’", "ʼ", "`"]
+        if not streets and any(ap in cleaned_st for ap in apostrophes):
+            current_ap = next(ap for ap in apostrophes if ap in cleaned_st)
+            for ap in apostrophes:
+                if ap == current_ap:
+                    continue
+                variant_query = cleaned_st.replace(current_ap, ap)
+                streets = await yasno_client.search_streets(regionId, variant_query, dsoId)
+                if streets:
+                    break
+
+        if not streets:
+            streets = await yasno_client.search_streets(regionId, streetName, dsoId)
+
+        if not streets:
+            raise HTTPException(status_code=404, detail=f"Street '{streetName}' not found.")
+
+        matched_street = streets[0]
+        streetId = matched_street["id"]
+        streetName = matched_street["value"]
+
+        # Search houses in Yasno
+        houses = await yasno_client.search_houses(regionId, streetId, "", dsoId)
+        if not houses:
+            raise HTTPException(status_code=404, detail="No houses found on this street.")
+
+        # Match house or closest numeric match
+        def normalize_h(h: str) -> str:
+            return re.sub(r'[^a-zA-Zа-яА-Я0-9]', '', h).lower()
+
+        def extract_num(house_str: str) -> int:
+            match = re.search(r'\d+', house_str)
+            return int(match.group()) if match else 1
+
+        target_norm = normalize_h(houseName)
+        matched_house = None
+
+        for h in houses:
+            if normalize_h(h["value"]) == target_norm:
+                matched_house = h
+                break
+
+        if not matched_house:
+            for h in houses:
+                if target_norm != "" and (target_norm in normalize_h(h["value"]) or normalize_h(h["value"]) in target_norm):
+                    matched_house = h
+                    break
+
+        if not matched_house:
+            target_num = extract_num(houseName)
+            min_diff = float('inf')
+            for h in houses:
+                h_num = extract_num(h["value"])
+                diff = abs(h_num - target_num)
+                if diff < min_diff:
+                    min_diff = diff
+                    matched_house = h
+
+        houseId = matched_house["id"]
+        houseName = matched_house["value"]
+
+    # Verify we now have all necessary IDs
+    if regionId is None or streetId is None or houseId is None or dsoId is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing required parameters. Either provide regionId, streetId, houseId, and dsoId, or provide streetName and houseName."
+        )
+
+    # 2. Determine group information & live status
     group = 1
     subgroup = 1
     raw_group_key = "1.1"
@@ -505,3 +592,145 @@ async def get_status_by_coordinates(
         streetName=resolved_street_name,
         houseName=resolved_house_name
     )
+
+class AddressItem(BaseModel):
+    streetName: str
+    houseName: str
+
+@router.post("/status/batch")
+async def get_status_batch(items: List[AddressItem]):
+    from collections import defaultdict
+    import asyncio
+
+    # Group items by streetName to prevent duplicate lookups
+    by_street = defaultdict(list)
+    for item in items:
+        by_street[item.streetName].append(item.houseName)
+
+    results = []
+    sem = asyncio.Semaphore(3)
+
+    async def resolve_street_houses(street_name: str, house_names: List[str]):
+        async with sem:
+            try:
+                region_id = 25
+                dso_id = 902
+
+                # Clean street name
+                def clean_st(name: str) -> str:
+                    name = re.sub(r'\s*\(.*?\)\s*', ' ', name)
+                    name = re.sub(r'^(вулиця|вул\.|проспект|пр\.|провулок|пров\.|площа|майдан|бульвар|бул\.|шосе|дорога)\s+', '', name, flags=re.IGNORECASE)
+                    name = re.sub(r'\s+(вулиця|вул\.|проспект|пр\.|провулок|пров\.|площа|майдан|бульвар|бул\.|шосе|дорога)$', '', name, flags=re.IGNORECASE)
+                    return name.strip()
+
+                cleaned_st = clean_st(street_name)
+
+                # Search street in Yasno
+                streets = await yasno_client.search_streets(region_id, cleaned_st, dso_id)
+                apostrophes = ["'", "’", "ʼ", "`"]
+                if not streets and any(ap in cleaned_st for ap in apostrophes):
+                    current_ap = next(ap for ap in apostrophes if ap in cleaned_st)
+                    for ap in apostrophes:
+                        if ap == current_ap:
+                            continue
+                        variant_query = cleaned_st.replace(current_ap, ap)
+                        streets = await yasno_client.search_streets(region_id, variant_query, dso_id)
+                        if streets:
+                            break
+                if not streets:
+                    streets = await yasno_client.search_streets(region_id, street_name, dso_id)
+
+                if not streets:
+                    for hn in house_names:
+                        results.append({"streetName": street_name, "houseName": hn, "status": "UNKNOWN"})
+                    return
+
+                matched_street = streets[0]
+                street_id = matched_street["id"]
+                resolved_street_name = matched_street["value"]
+
+                # Fetch houses
+                houses = await yasno_client.search_houses(region_id, street_id, "", dso_id)
+                if not houses:
+                    for hn in house_names:
+                        results.append({"streetName": street_name, "houseName": hn, "status": "UNKNOWN"})
+                    return
+
+                # Fetch live status from DTEK once per street
+                city = "м. Київ"
+                try:
+                    dtek_res = await dtek_client.fetch_live_status(dso_id, city, resolved_street_name)
+                    dtek_data = dtek_res.get("data", {})
+                except Exception as e:
+                    logger.error(f"Live DTEK fetch failed in batch: {e}")
+                    dtek_data = {}
+
+                # Match helpers
+                def normalize_h(h: str) -> str:
+                    return re.sub(r'[^a-zA-Zа-яА-Я0-9]', '', h).lower()
+
+                def extract_num(house_str: str) -> int:
+                    match = re.search(r'\d+', house_str)
+                    return int(match.group()) if match else 1
+
+                for house_name in house_names:
+                    try:
+                        target_norm = normalize_h(house_name)
+                        matched_house = None
+                        for h in houses:
+                            if normalize_h(h["value"]) == target_norm:
+                                matched_house = h
+                                break
+                        if not matched_house:
+                            for h in houses:
+                                if target_norm != "" and (target_norm in normalize_h(h["value"]) or normalize_h(h["value"]) in target_norm):
+                                    matched_house = h
+                                    break
+                        if not matched_house:
+                            target_num = extract_num(house_name)
+                            min_diff = float('inf')
+                            for h in houses:
+                                h_num = extract_num(h["value"])
+                                diff = abs(h_num - target_num)
+                                if diff < min_diff:
+                                    min_diff = diff
+                                    matched_house = h
+
+                        resolved_house_name = matched_house["value"]
+
+                        # Match status
+                        power_status = "ON"
+                        live_matched_val = None
+                        for k, v in dtek_data.items():
+                            if normalize_h(k) == normalize_h(resolved_house_name):
+                                live_matched_val = v
+                                break
+
+                        if live_matched_val is not None:
+                            start_date = live_matched_val.get("start_date", "")
+                            end_date = live_matched_val.get("end_date", "")
+                            type_val = live_matched_val.get("type", "")
+                            if start_date != "" or end_date != "" or type_val != "":
+                                power_status = "OFF"
+
+                        results.append({
+                            "streetName": street_name,
+                            "houseName": house_name,
+                            "status": power_status
+                        })
+                    except Exception as e:
+                        logger.error(f"Error resolving house {house_name} in batch: {e}")
+                        results.append({
+                            "streetName": street_name,
+                            "houseName": house_name,
+                            "status": "UNKNOWN"
+                        })
+            except Exception as e:
+                logger.error(f"Error resolving street {street_name} in batch: {e}")
+                for hn in house_names:
+                    results.append({"streetName": street_name, "houseName": hn, "status": "UNKNOWN"})
+
+    # Run parallel resolutions
+    tasks = [resolve_street_houses(st, hns) for st, hns in by_street.items()]
+    await asyncio.gather(*tasks)
+    return results
