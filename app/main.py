@@ -43,5 +43,5 @@ async def generic_exception_handler(request: Request, exc: Exception):
     )
 
 # Include Routers
-app.include_router(web_router)
-app.include_router(api_router)
+app.include_router(web_router, tags=["Web Examples / Frontends"])
+app.include_router(api_router, tags=["Outage API v1"])

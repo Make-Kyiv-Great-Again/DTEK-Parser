@@ -18,8 +18,3 @@ async def read_root(request: Request):
 async def read_status_coordinates_demo(request: Request):
     """Render the coordinates-based geolocation map demo page."""
     return templates.TemplateResponse(request, "status_coordinates_demo.html")
-
-@router.get("/gDemo")
-async def redirect_gdemo():
-    """Redirect legacy gDemo requests to the new StatusCoordinates/Demo page."""
-    return RedirectResponse(url="/StatusCoordinates/Demo")
