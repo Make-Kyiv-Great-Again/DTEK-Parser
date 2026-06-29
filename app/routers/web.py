@@ -1,6 +1,6 @@
 import os
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 router = APIRouter()
@@ -14,7 +14,12 @@ async def read_root(request: Request):
     """Render the main interactive map page."""
     return templates.TemplateResponse(request, "index.html")
 
-@router.get("/gDemo", response_class=HTMLResponse)
-async def read_gdemo(request: Request):
-    """Render the geolocation coordinate demo page."""
-    return templates.TemplateResponse(request, "gdemo.html")
+@router.get("/StatusCoordinates/Demo", response_class=HTMLResponse)
+async def read_status_coordinates_demo(request: Request):
+    """Render the coordinates-based geolocation map demo page."""
+    return templates.TemplateResponse(request, "status_coordinates_demo.html")
+
+@router.get("/gDemo")
+async def redirect_gdemo():
+    """Redirect legacy gDemo requests to the new StatusCoordinates/Demo page."""
+    return RedirectResponse(url="/StatusCoordinates/Demo")

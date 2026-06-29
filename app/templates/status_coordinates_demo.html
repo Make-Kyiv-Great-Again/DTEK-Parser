@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SvitloLocator - Coordinates Map Demo</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(17, 25, 40, 0.85);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --primary: #2563eb;
+            --primary-hover: #3b82f6;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --status-on: #10b981;
+            --status-off: #ef4444;
+            --status-possible: #f59e0b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        #map {
+            flex: 1;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* Sidebar Panel */
+        .sidebar {
+            width: 420px;
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-left: 1px solid var(--card-border);
+            height: 100%;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+            box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+            overflow-y: auto;
+        }
+
+        h1 {
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p.description {
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.5;
+            margin-bottom: 20px;
+        }
+
+        .btn-geolocation {
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 18px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+        }
+
+        .btn-geolocation:hover {
+            background: var(--primary-hover);
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+        }
+
+        /* Status Details Card */
+        .status-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            display: none;
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .status-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 99px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-badge.on {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--status-on);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+        }
+
+        .status-badge.off {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--status-off);
+            border: 1px solid rgba(239, 68, 68, 0.25);
+        }
+
+        .status-badge.possible {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--status-possible);
+            border: 1px solid rgba(245, 158, 11, 0.25);
+        }
+
+        .status-badge span.dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .address-title {
+            font-size: 16px;
+            font-weight: 600;
+            text-align: left;
+            margin-bottom: 14px;
+            color: #fff;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 13px;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            color: var(--text-muted);
+        }
+
+        .info-val {
+            font-weight: 500;
+            text-align: right;
+            max-width: 65%;
+        }
+
+        /* Weekly Schedule Table */
+        .schedule-section {
+            display: none;
+            margin-top: 10px;
+        }
+
+        .schedule-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            text-align: left;
+            color: var(--text-muted);
+        }
+
+        /* Grid elements matching the original UI */
+        .weekly-grid-container {
+            display: grid;
+            grid-template-columns: 35px 1fr;
+            gap: 6px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 10px;
+        }
+
+        .day-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 18px;
+        }
+
+        .slots-row {
+            display: flex;
+            height: 18px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .slot-chunk {
+            height: 100%;
+            transition: opacity 0.2s ease;
+        }
+
+        .slot-chunk.Definite {
+            background-color: var(--status-off);
+        }
+
+        .slot-chunk.Possible {
+            background-color: var(--status-possible);
+        }
+
+        .slot-chunk.NotPlanned {
+            background-color: var(--status-on);
+        }
+
+        /* Loader & Instructions */
+        .placeholder-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            color: var(--text-muted);
+            font-size: 13px;
+            padding: 40px 0;
+            border: 1px dashed rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            margin-top: 10px;
+        }
+
+        .placeholder-box svg {
+            width: 48px;
+            height: 48px;
+            stroke: rgba(255, 255, 255, 0.15);
+            margin-bottom: 12px;
+        }
+
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid rgba(255, 255, 255, 0.05);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 12px;
+            display: none;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Leaflet popups styling override */
+        .leaflet-popup-content-wrapper {
+            background: var(--card-bg) !important;
+            color: var(--text-main) !important;
+            backdrop-filter: blur(10px) !important;
+            border: 1px solid var(--card-border) !important;
+            border-radius: 12px !important;
+            font-family: 'Inter', sans-serif !important;
+        }
+        .leaflet-popup-tip {
+            background: var(--card-bg) !important;
+        }
+        .popup-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 99px;
+            font-size: 10px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .popup-badge.on {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--status-on);
+        }
+        .popup-badge.off {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--status-off);
+        }
+        .popup-badge.possible {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--status-possible);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Leaflet Map Container -->
+    <div id="map"></div>
+
+    <!-- Sidebar Detail Panel -->
+    <div class="sidebar">
+        <h1>SvitloLocator</h1>
+        <p class="description">
+            Тестування координатного пошуку (v1 API). Натисніть на будь-яке місце на карті або скористайтеся кнопкою пошуку геолокації. Розумний алгоритм автоматично підбере **найближчий зареєстрований будинок** на вулиці.
+        </p>
+
+        <button class="btn-geolocation" id="btn-geolocate">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+            Визначити моє місце розташування
+        </button>
+
+        <!-- Dynamic Loader -->
+        <div class="placeholder-box" id="sidebar-placeholder">
+            <div class="spinner" id="spinner"></div>
+            <svg id="placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+            <span id="placeholder-text">Натисніть на карту для визначення статусу</span>
+        </div>
+
+        <!-- Outage Details Card -->
+        <div class="status-card" id="status-card">
+            <div class="status-header">
+                <div class="address-title" id="card-address">-</div>
+                <div class="status-badge" id="card-badge">
+                    <span class="dot"></span>
+                    <span id="card-badge-text">-</span>
+                </div>
+            </div>
+            
+            <div class="info-row">
+                <span class="info-label">Статус оператора</span>
+                <span class="info-val" id="card-reason">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Група / Черга</span>
+                <span class="info-val" id="card-group">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Стовпчик розкладу</span>
+                <span class="info-val" id="card-schedule-col">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Останнє оновлення</span>
+                <span class="info-val" id="card-update">-</span>
+            </div>
+        </div>
+
+        <!-- Weekly Schedule Table -->
+        <div class="schedule-section" id="schedule-section">
+            <div class="schedule-title">Тижневий графік вимкнень:</div>
+            <div class="weekly-grid-container" id="weekly-grid"></div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script>
+        // Initialize Map
+        const map = L.map('map', {
+            center: [50.4501, 30.5234], // Kyiv Center
+            zoom: 13,
+            zoomControl: false
+        });
+
+        // Add Zoom Control at bottom right
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        // Add Dark Matter Tile Server
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
+        }).addTo(map);
+
+        let currentMarker = null;
+
+        // Geolocation hook
+        document.getElementById('btn-geolocate').addEventListener('click', () => {
+            if (!navigator.geolocation) {
+                alert("Ваш браузер не підтримує геолокацію.");
+                return;
+            }
+
+            document.getElementById('spinner').style.display = 'block';
+            document.getElementById('placeholder-icon').style.display = 'none';
+            document.getElementById('placeholder-text').textContent = 'Отримуємо координати GPS...';
+
+            navigator.geolocation.getCurrentPosition(position => {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+                map.setView([lat, lon], 16);
+                handleCoordinateLookup(lat, lon);
+            }, err => {
+                alert("Не вдалося визначити координати GPS: " + err.message);
+                resetPlaceholder();
+            });
+        });
+
+        // Map Click hook
+        map.on('click', (e) => {
+            const lat = e.latlng.lat;
+            const lon = e.latlng.lng;
+            handleCoordinateLookup(lat, lon);
+        });
+
+        async function handleCoordinateLookup(lat, lon) {
+            // Draw marker
+            if (currentMarker) {
+                map.removeLayer(currentMarker);
+            }
+            currentMarker = L.marker([lat, lon]).addTo(map);
+
+            // Display loading state in sidebar
+            document.getElementById('status-card').style.display = 'none';
+            document.getElementById('schedule-section').style.display = 'none';
+            document.getElementById('sidebar-placeholder').style.display = 'flex';
+            document.getElementById('spinner').style.display = 'block';
+            document.getElementById('placeholder-icon').style.display = 'none';
+            document.getElementById('placeholder-text').textContent = 'Визначаємо будинок та завантажуємо дані...';
+
+            try {
+                const response = await fetch(`/api/v1/status/coordinates?lat=${lat}&lon=${lon}`);
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || "Помилка обробки координат.");
+                }
+
+                const data = await response.json();
+                renderSidebarResult(data);
+                renderMapPopup(data, lat, lon);
+            } catch (err) {
+                alert(err.message);
+                resetPlaceholder();
+                if (currentMarker) {
+                    map.removeLayer(currentMarker);
+                    currentMarker = null;
+                }
+            }
+        }
+
+        function renderSidebarResult(data) {
+            document.getElementById('sidebar-placeholder').style.display = 'none';
+
+            // Fill card values
+            document.getElementById('card-address').textContent = data.address;
+            document.getElementById('card-reason').textContent = data.status_reason;
+            document.getElementById('card-group').textContent = `Група ${data.group_info.raw_group_key}`;
+            document.getElementById('card-schedule-col').textContent = `Графік ${data.group_info.mapped_group_key}`;
+            document.getElementById('card-update').textContent = data.last_update || "Невідомо";
+
+            // Configure badge
+            const badge = document.getElementById('card-badge');
+            const badgeText = document.getElementById('card-badge-text');
+            badge.className = 'status-badge';
+            if (data.power_status === 'ON') {
+                badge.classList.add('on');
+                badgeText.textContent = 'Світло є';
+            } else if (data.power_status === 'OFF') {
+                badge.classList.add('off');
+                badgeText.textContent = 'Немає світла';
+            } else {
+                badge.classList.add('possible');
+                badgeText.textContent = 'Можливе вимкнення';
+            }
+
+            document.getElementById('status-card').style.display = 'block';
+
+            // Draw weekly grid if schedule applies
+            const today = data.planned_schedule ? data.planned_schedule.today : null;
+            const tomorrow = data.planned_schedule ? data.planned_schedule.tomorrow : null;
+            const hasPlannedOutages = 
+                (today && (today.status === 'ScheduleApplies' || today.status === 'EmergencyOutages' || (today.slots && today.slots.length > 0))) ||
+                (tomorrow && (tomorrow.status === 'ScheduleApplies' || tomorrow.status === 'EmergencyOutages' || (tomorrow.slots && tomorrow.slots.length > 0)));
+
+            const showSchedule = hasPlannedOutages || data.power_status === 'OFF' || data.power_status === 'EMERGENCY';
+
+            if (showSchedule && data.weekly_schedule) {
+                renderWeeklyGrid(data.weekly_schedule);
+                document.getElementById('schedule-section').style.display = 'block';
+            } else {
+                document.getElementById('schedule-section').style.display = 'none';
+            }
+        }
+
+        function renderMapPopup(data, lat, lon) {
+            let badgeClass = 'popup-badge';
+            let badgeLabel = '';
+            if (data.power_status === 'ON') {
+                badgeClass += ' on';
+                badgeLabel = 'Світло є';
+            } else if (data.power_status === 'OFF') {
+                badgeClass += ' off';
+                badgeLabel = 'Немає світла';
+            } else {
+                badgeClass += ' possible';
+                badgeLabel = 'Можливе вимкнення';
+            }
+
+            const popupContent = `
+                <div style="font-size: 13px; line-height: 1.4;">
+                    <div class="${badgeClass}">${badgeLabel}</div>
+                    <div style="font-weight: 700; margin-bottom: 4px; color: #fff;">${data.address}</div>
+                    <div style="color: #9ca3af; font-size: 11px; margin-bottom: 2px;">${data.status_reason}</div>
+                    <div style="font-size: 11px; font-weight: 500; color: #60a5fa;">Група ${data.group_info.raw_group_key} (Розклад ${data.group_info.mapped_group_key})</div>
+                </div>
+            `;
+
+            if (currentMarker) {
+                currentMarker.bindPopup(popupContent).openPopup();
+            }
+        }
+
+        function renderWeeklyGrid(schedule) {
+            const grid = document.getElementById('weekly-grid');
+            grid.innerHTML = '';
+
+            const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
+
+            for (let i = 0; i < 7; i++) {
+                const dayKey = i.toString();
+                const dayLabel = document.createElement('div');
+                dayLabel.className = 'day-label';
+                dayLabel.textContent = days[i];
+                grid.appendChild(dayLabel);
+
+                const row = document.createElement('div');
+                row.className = 'slots-row';
+
+                const slots = schedule[dayKey] || [];
+                slots.forEach(slot => {
+                    const duration = slot.end - slot.start;
+                    const pct = (duration / 1440) * 100;
+                    
+                    const chunk = document.createElement('div');
+                    chunk.className = `slot-chunk ${slot.type}`;
+                    chunk.style.width = `${pct}%`;
+                    chunk.title = `${formatMinutes(slot.start)} - ${formatMinutes(slot.end)} (${translateSlotType(slot.type)})`;
+                    row.appendChild(chunk);
+                });
+
+                grid.appendChild(row);
+            }
+        }
+
+        function formatMinutes(m) {
+            const hrs = Math.floor(m / 60).toString().padStart(2, '0');
+            const mins = (m % 60).toString().padStart(2, '0');
+            return `${hrs}:${mins}`;
+        }
+
+        function translateSlotType(type) {
+            const map = {
+                'Definite': 'Гарантоване відключення',
+                'Possible': 'Можливе відключення',
+                'NotPlanned': 'Світло є'
+            };
+            return map[type] || type;
+        }
+
+        function resetPlaceholder() {
+            document.getElementById('sidebar-placeholder').style.display = 'flex';
+            document.getElementById('spinner').style.display = 'none';
+            document.getElementById('placeholder-icon').style.display = 'block';
+            document.getElementById('placeholder-text').textContent = 'Натисніть на карту для визначення статусу';
+        }
+    </script>
+</body>
+</html>

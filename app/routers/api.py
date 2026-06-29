@@ -348,13 +348,10 @@ async def get_status_by_coordinates(
 
     address = geo_data.get("address", {})
     
-    # 1. Resolve House Number
+    # 1. Resolve House Number (default to "1" if Nominatim does not provide one)
     house_number = address.get("house_number")
     if not house_number:
-        raise HTTPException(
-            status_code=404,
-            detail="Не вдалося визначити конкретний номер будинку для цих координат. Будь ласка, оберіть його на карті."
-        )
+        house_number = "1"
 
     # 2. Resolve Street Name
     street_name = address.get("road") or address.get("street")
@@ -406,29 +403,40 @@ async def get_status_by_coordinates(
     if not houses:
         raise HTTPException(status_code=404, detail="Не знайдено будинків на цій вулиці в базі оператора.")
 
-    # 6. Normalize and match house number
+    # 6. Match house number, or find the closest available house
     def normalize_house(h: str) -> str:
         return re.sub(r'[^a-zA-Zа-яА-Я0-9]', '', h).lower()
 
+    def extract_numeric_part(house_str: str) -> int:
+        match = re.search(r'\d+', house_str)
+        return int(match.group()) if match else 1
+
     target_norm = normalize_house(house_number)
     matched_house = None
+
+    # A. Try exact match first
     for h in houses:
         if normalize_house(h["value"]) == target_norm:
             matched_house = h
             break
 
+    # B. Try partial match
     if not matched_house:
-        # Fallback to partial matching
         for h in houses:
-            if target_norm in normalize_house(h["value"]) or normalize_house(h["value"]) in target_norm:
+            if target_norm != "" and (target_norm in normalize_house(h["value"]) or normalize_house(h["value"]) in target_norm):
                 matched_house = h
                 break
 
+    # C. Fallback: Find closest numeric match
     if not matched_house:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Будинок '{house_number}' не знайдено в базі для вулиці '{resolved_street_name}'."
-        )
+        target_num = extract_numeric_part(house_number)
+        min_diff = float('inf')
+        for h in houses:
+            h_num = extract_numeric_part(h["value"])
+            diff = abs(h_num - target_num)
+            if diff < min_diff:
+                min_diff = diff
+                matched_house = h
 
     house_id = matched_house["id"]
     resolved_house_name = matched_house["value"]
