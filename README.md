@@ -2,6 +2,8 @@
 
 SvitloLocator is a clean FastAPI-based REST API wrapper and dark-themed interactive map frontend that queries real-time power outages directly from DTEK Kyiv/Dnipro regional AJAX services. It automatically bypasses WAF controls, extracts session CSRF tokens, and conditionally renders schedules in the UI only when outages are active or planned.
 
+**Production Deployment:** [https://svitlo-finder.xyz](https://svitlo-finder.xyz) (API docs at [https://svitlo-finder.xyz/docs](https://svitlo-finder.xyz/docs))
+
 ---
 
 ## 🚀 Quick Start (Using Docker)
@@ -23,7 +25,7 @@ SvitloLocator is a clean FastAPI-based REST API wrapper and dark-themed interact
 
 ## 🛠️ API Reference
 
-### All documentation available at: [http://localhost:8000/docs](http://localhost:8000/docs)
+### All documentation available at: [https://svitlo-finder.xyz/docs](https://svitlo-finder.xyz/docs)
 
 ### 1. Retrieve Current Status: `GET /api/v1/status`
 Queries the live status for a street and house. Falls back to static schedule calculations if names are omitted.

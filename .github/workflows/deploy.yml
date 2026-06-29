@@ -25,13 +25,13 @@ jobs:
 
             cd /opt
 
-            if [ ! -d "DTEK-Parser-" ]; then
+            if [ ! -d "DTEK-Parser" ]; then
               echo "Cloning repository..."
-              git clone https://github.com/KovalovOL/DTEK-Parser-.git
-              cd DTEK-Parser-
+              git clone https://github.com/Make-Kyiv-Great-Again/DTEK-Parser.git
+              cd DTEK-Parser
             else
               echo "Repository exists. Pulling latest changes..."
-              cd DTEK-Parser-
+              cd DTEK-Parser
               git pull origin main
             fi
 
