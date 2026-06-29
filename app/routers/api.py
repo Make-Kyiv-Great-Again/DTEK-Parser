@@ -379,10 +379,15 @@ async def get_status_by_coordinates(
             detail="Не вдалося визначити назву вулиці за цими координатами."
         )
 
-    # Strip common Ukrainian road prefix/suffix helpers
+    # Strip common Ukrainian road prefix/suffix helpers & parenthesized details
     def clean_street(name: str) -> str:
-        name = re.sub(r'^(вулиця|вул\.|проспект|пр\.|провулок|пров\.|площа|майдан)\s+', '', name, flags=re.IGNORECASE)
-        name = re.sub(r'\s+(вулиця|вул\.|проспект|пр\.|провулок|пров\.|площа|майдан)$', '', name, flags=re.IGNORECASE)
+        # Strip parenthesized text first (e.g. "Вишнева вулиця (Солом'янський р-н)" -> "Вишнева вулиця")
+        name = re.sub(r'\s*\(.*?\)\s*', ' ', name)
+        # Strip common road type prefixes and suffixes
+        name = re.sub(r'^(вулиця|вул\.|проспект|пр\.|провулок|пров\.|площа|майдан|бульвар|бул\.|шосе|дорога)\s+', '', name, flags=re.IGNORECASE)
+        name = re.sub(r'\s+(вулиця|вул\.|проспект|пр\.|провулок|пров\.|площа|майдан|бульвар|бул\.|шосе|дорога)$', '', name, flags=re.IGNORECASE)
+        # Clean multiple spaces
+        name = re.sub(r'\s+', ' ', name)
         return name.strip()
 
     cleaned_street_query = clean_street(street_name)
@@ -402,15 +407,24 @@ async def get_status_by_coordinates(
         dso_id = 901
 
     # 4. Search Street in Yasno to get ID
+    # Stage 1: Cleaned street query
     streets = await yasno_client.search_streets(region_id, cleaned_street_query, dso_id)
+    
+    # Stage 2: Original geocoded name
     if not streets:
-        # Retry without cleaning, just in case
         streets = await yasno_client.search_streets(region_id, street_name, dso_id)
-        if not streets:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Вулицю '{street_name}' не знайдено в базі оператора."
-            )
+        
+    # Stage 3: Split cleaned query and try last word (main identifier, e.g. "Палладіна")
+    if not streets and " " in cleaned_street_query:
+        words = [w for w in cleaned_street_query.split() if len(w) > 2]
+        if words:
+            streets = await yasno_client.search_streets(region_id, words[-1], dso_id)
+
+    if not streets:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Вулицю '{street_name}' не знайдено в базі оператора."
+        )
 
     matched_street = streets[0]
     street_id = matched_street["id"]
