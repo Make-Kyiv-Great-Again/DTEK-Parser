@@ -410,9 +410,32 @@ async def get_status_by_coordinates(
     # Stage 1: Cleaned street query
     streets = await yasno_client.search_streets(region_id, cleaned_street_query, dso_id)
     
+    # Stage 1b: Try apostrophe variants if query contains any Ukrainian apostrophe characters
+    # Common Ukrainian apostrophes: U+0027 ('), U+2019 (’), U+02BC (ʼ), U+0060 (`)
+    apostrophes = ["'", "’", "ʼ", "`"]
+    if not streets and any(ap in cleaned_street_query for ap in apostrophes):
+        current_ap = next(ap for ap in apostrophes if ap in cleaned_street_query)
+        for ap in apostrophes:
+            if ap == current_ap:
+                continue
+            variant_query = cleaned_street_query.replace(current_ap, ap)
+            streets = await yasno_client.search_streets(region_id, variant_query, dso_id)
+            if streets:
+                break
+
     # Stage 2: Original geocoded name
     if not streets:
         streets = await yasno_client.search_streets(region_id, street_name, dso_id)
+        # Try apostrophe variants on original name as well
+        if not streets and any(ap in street_name for ap in apostrophes):
+            current_ap = next(ap for ap in apostrophes if ap in street_name)
+            for ap in apostrophes:
+                if ap == current_ap:
+                    continue
+                variant_query = street_name.replace(current_ap, ap)
+                streets = await yasno_client.search_streets(region_id, variant_query, dso_id)
+                if streets:
+                    break
         
     # Stage 3: Split cleaned query and try last word (main identifier, e.g. "Палладіна")
     if not streets and " " in cleaned_street_query:
