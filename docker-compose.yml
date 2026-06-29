@@ -1,0 +1,24 @@
+services:
+  svitlolocator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: svitlolocator:latest
+    container_name: svitlolocator
+    restart: unless-stopped
+    networks:
+      - traefik-public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      
+      - "traefik.http.routers.svitlolocator.rule=Host(`svitlo-finder.xyz`) || Host(`www.svitlo-finder.xyz`)"
+      - "traefik.http.routers.svitlolocator.entrypoints=websecure"
+      - "traefik.http.routers.svitlolocator.tls=true"
+      - "traefik.http.routers.svitlolocator.tls.certresolver=myresolver"
+
+      - "traefik.http.services.svitlolocator.loadbalancer.server.port=8082"
+
+networks:
+  traefik-public:
+    external: true
