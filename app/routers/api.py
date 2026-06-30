@@ -607,6 +607,25 @@ async def get_status_batch(items: List[AddressItem]):
     for item in items:
         by_street[item.streetName].append(item.houseName)
 
+    planned_data_cache = None
+    probable_data_cache = None
+
+    async def get_yasno_schedules(region_id: int, dso_id: int):
+        nonlocal planned_data_cache, probable_data_cache
+        if planned_data_cache is None:
+            try:
+                planned_data_cache = await yasno_client.fetch_planned_outages(region_id, dso_id)
+            except Exception as e:
+                logger.error(f"Failed to fetch planned outages in batch: {e}")
+                planned_data_cache = {}
+        if probable_data_cache is None:
+            try:
+                probable_data_cache = await yasno_client.fetch_probable_outages(region_id, dso_id)
+            except Exception as e:
+                logger.error(f"Failed to fetch probable outages in batch: {e}")
+                probable_data_cache = {}
+        return planned_data_cache, probable_data_cache
+
     results = []
     sem = asyncio.Semaphore(3)
 
@@ -712,6 +731,72 @@ async def get_status_batch(items: List[AddressItem]):
                             type_val = live_matched_val.get("type", "")
                             if start_date != "" or end_date != "" or type_val != "":
                                 power_status = "OFF"
+                        else:
+                            # Fallback to Yasno static group/schedule
+                            try:
+                                house_id = matched_house["id"]
+                                group_data = await yasno_client.fetch_house_group(region_id, street_id, house_id, dso_id)
+                                if group_data and "group" in group_data:
+                                    group = group_data["group"]
+                                    subgroup = group_data.get("subgroup", 1)
+                                    raw_group_key = f"{group}.{subgroup}"
+                                    
+                                    # Fetch schedules (lazily)
+                                    planned_outages, probable_outages = await get_yasno_schedules(region_id, dso_id)
+                                    
+                                    # Map group
+                                    mapped_group = ((group - 1) % 6) + 1
+                                    mapped_group_key = f"{mapped_group}.{subgroup}"
+                                    
+                                    planned_data = planned_outages.get(raw_group_key, {})
+                                    today_planned = planned_data.get("today", {})
+                                    today_status = today_planned.get("status", "")
+                                    today_slots = today_planned.get("slots", [])
+                                    
+                                    kyiv_tz = ZoneInfo("Europe/Kyiv")
+                                    now = datetime.datetime.now(kyiv_tz)
+                                    current_minute = now.hour * 60 + now.minute
+                                    
+                                    if today_status == "EmergencyOutages":
+                                        power_status = "OFF"
+                                    elif today_slots:
+                                        active_planned_slot = None
+                                        for slot in today_slots:
+                                            start = slot.get("start", 0)
+                                            end = slot.get("end", 0)
+                                            if start <= current_minute < end:
+                                                active_planned_slot = slot
+                                                break
+                                        if active_planned_slot:
+                                            slot_type = active_planned_slot.get("type", "")
+                                            if slot_type == "Definite":
+                                                power_status = "OFF"
+                                    else:
+                                        # Fallback to weekly recurring probable schedule
+                                        weekly_schedule = None
+                                        reg_key = str(region_id)
+                                        dso_key = str(dso_id)
+                                        if reg_key in probable_outages and "dsos" in probable_outages[reg_key]:
+                                            dsos = probable_outages[reg_key]["dsos"]
+                                            if dso_key in dsos and "groups" in dsos[dso_key]:
+                                                groups_dict = dsos[dso_key]["groups"]
+                                                if mapped_group_key in groups_dict:
+                                                    weekly_schedule = groups_dict[mapped_group_key].get("slots")
+                                        
+                                        if weekly_schedule:
+                                            current_weekday = now.weekday()
+                                            weekday_slots = weekly_schedule.get(str(current_weekday), [])
+                                            active_slot = None
+                                            for slot in weekday_slots:
+                                                start = slot.get("start", 0)
+                                                end = slot.get("end", 0)
+                                                if start <= current_minute < end:
+                                                    active_slot = slot
+                                                    break
+                                            if active_slot and active_slot.get("type") == "Definite":
+                                                power_status = "OFF"
+                            except Exception as ex:
+                                logger.error(f"Yasno fallback failed in batch for house {house_name}: {ex}")
 
                         results.append({
                             "streetName": street_name,
