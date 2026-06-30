@@ -23,3 +23,8 @@ async def read_status_coordinates_demo(request: Request):
 async def read_radius_outages_demo(request: Request):
     """Render the 1km radius neighborhood outage mapping demo page."""
     return templates.TemplateResponse(request, "radius_outages_demo.html")
+
+@router.get("/ViewportOutages/Demo", response_class=HTMLResponse)
+async def read_viewport_outages_demo(request: Request):
+    """Render the dynamic viewport-based neighborhood outage mapping demo page."""
+    return templates.TemplateResponse(request, "viewport_outages_demo.html")

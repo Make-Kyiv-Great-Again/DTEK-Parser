@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SvitloLocator - Viewport Outage Scanner</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --panel-bg: rgba(15, 23, 42, 0.45);
+            --card-bg: rgba(30, 41, 59, 0.5);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --orange-brand: #ea580c;
+            --orange-bright: #fb923c;
+            --black-brand: #111827;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            overflow: hidden;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* Sidebar Glassmorphism */
+        .sidebar {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 380px;
+            max-height: calc(100% - 40px);
+            z-index: 10;
+            background: var(--panel-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            overflow-y: auto;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #fff 0%, #cbd5e1 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }
+
+        .description {
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .status-box {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .status-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 12px;
+        }
+
+        /* Loading Spinner */
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-top: 2px solid var(--orange-bright);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .status-log {
+            font-family: monospace;
+            font-size: 11px;
+            color: #38bdf8;
+            max-height: 150px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .log-item {
+            line-height: 1.4;
+            word-break: break-all;
+        }
+
+        .progress-container {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 12px;
+            display: none;
+        }
+
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background: var(--orange-bright);
+            transition: width 0.3s ease;
+        }
+
+        /* Stats Card Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .stat-card {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .stat-val {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+
+        .stat-val.orange { color: #fb923c; }
+        .stat-val.black { color: #f3f4f6; }
+
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        /* Legend Panel */
+        .legend-box {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 12px;
+            color: var(--text-main);
+            margin-bottom: 8px;
+        }
+
+        .legend-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .legend-color {
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+
+        .legend-color.on {
+            background-color: var(--orange-brand);
+            border-color: var(--orange-bright);
+        }
+
+        .legend-color.off {
+            background-color: var(--black-brand);
+            border-color: #374151;
+        }
+
+        .legend-color.unknown {
+            background-color: #4b5563;
+        }
+
+        /* Zoom Notification Alert */
+        .zoom-warning {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #fca5a5;
+            border-radius: 12px;
+            padding: 14px;
+            font-size: 13px;
+            line-height: 1.5;
+            text-align: center;
+            margin-bottom: 16px;
+        }
+
+        /* Leaflet Controls Custom CSS */
+        .leaflet-bar {
+            border: 1px solid var(--border-color) !important;
+            box-shadow: none !important;
+            border-radius: 8px !important;
+            overflow: hidden;
+        }
+
+        .leaflet-bar a {
+            background-color: var(--panel-bg) !important;
+            backdrop-filter: blur(10px);
+            color: var(--text-main) !important;
+            border-bottom: 1px solid var(--border-color) !important;
+            transition: background 0.2s;
+        }
+
+        .leaflet-bar a:hover {
+            background-color: rgba(30, 41, 59, 0.8) !important;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Leaflet Map -->
+    <div id="map"></div>
+
+    <!-- Sidebar Panel -->
+    <div class="sidebar">
+        <h1>SvitloLocator</h1>
+        <p class="description">
+            <strong>Динамічний огляд екрану.</strong> Карта автоматично завантажує будинки у поточному полі зору (viewport) при наближенні та забарвлює їх у <strong>помаранчевий</strong> (зі світлом) або <strong>чорний</strong> (без світла) за допомогою нашого API.
+        </p>
+
+        <!-- Zoom Warning -->
+        <div id="zoom-alert" class="zoom-warning">
+            Наблизьте карту (Рівень ≥ 15) для початку сканування будинків.
+        </div>
+
+        <!-- Status Box -->
+        <div class="status-box" id="status-panel" style="display: none;">
+            <div class="status-title">
+                <span id="status-title-text">Завантаження...</span>
+                <span class="spinner" id="spinner"></span>
+            </div>
+            
+            <div class="status-log" id="status-log">
+                <div class="log-item">Наблизьте карту для початку сканування.</div>
+            </div>
+
+            <div class="progress-container" id="progress-container">
+                <div class="progress-bar" id="progress-bar"></div>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-val orange" id="stat-on">0</div>
+                    <div class="stat-label">Зі світлом</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-val black" id="stat-off">0</div>
+                    <div class="stat-label">Без світла</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="legend-box">
+            <div class="legend-item">
+                <div class="legend-color on"></div>
+                <span>Є світло (Помаранчевий)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color off"></div>
+                <span>Немає світла (Чорний)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color unknown"></div>
+                <span>Статус невідомий / Інша мережа</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script>
+        // Initialize Map
+        const map = L.map('map', {
+            center: [50.4501, 30.5234], // Kyiv Center (Maidan)
+            zoom: 14,
+            zoomControl: false
+        });
+
+        // Add Zoom Control at bottom right
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        // Add Dark Matter Tile Server
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
+        }).addTo(map);
+
+        // Global states
+        let buildingPolygonsLayer = L.layerGroup().addTo(map);
+        let renderedBuildingIds = new Set();  // Client-side cache to avoid duplicate rendering/querying
+        let activeQuery = null;
+        let debounceTimer = null;
+        const MIN_ZOOM = 15;
+
+        // Listen for map movements and zoom levels
+        map.on('moveend', () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(handleMapChange, 500); // 500ms debouncing
+        });
+
+        // Initial check on load
+        handleMapChange();
+
+        async function handleMapChange() {
+            const zoom = map.getZoom();
+            const zoomAlert = document.getElementById('zoom-alert');
+            const statusPanel = document.getElementById('status-panel');
+
+            if (zoom < MIN_ZOOM) {
+                // Not zoomed in enough
+                zoomAlert.style.display = 'block';
+                statusPanel.style.display = 'none';
+                return;
+            }
+
+            zoomAlert.style.display = 'none';
+            statusPanel.style.display = 'block';
+
+            // Fetch current viewport bounding box
+            const bounds = map.getBounds();
+            const south = bounds.getSouth();
+            const west = bounds.getWest();
+            const north = bounds.getNorth();
+            const east = bounds.getEast();
+
+            await scanViewport(south, west, north, east);
+        }
+
+        async function scanViewport(south, west, north, east) {
+            document.getElementById('spinner').style.display = 'inline-block';
+            document.getElementById('status-title-text').textContent = 'Сканування екрану...';
+            document.getElementById('progress-container').style.display = 'block';
+            document.getElementById('progress-bar').style.width = '10%';
+            
+            const logBox = document.getElementById('status-log');
+            logBox.innerHTML = '';
+            addLogItem('Запуск viewport сканування...');
+
+            try {
+                // Fetch buildings in bounding box
+                addLogItem('Пошук нових контурів будинків у полі зору...');
+                const overpassUrl = `https://overpass-api.de/api/interpreter?data=[out:json];way(${south},${west},${north},${east})["addr:housenumber"]["addr:street"];out geom;`;
+                
+                const response = await fetch(overpassUrl);
+                if (!response.ok) throw new Error('Overpass API returned status ' + response.status);
+                
+                const data = await response.json();
+                const elements = data.elements || [];
+                
+                // Filter only new buildings
+                const newBuildings = elements.filter(el => !renderedBuildingIds.has(el.id));
+                addLogItem(`Знайдено ${elements.length} будівель (Нових для завантаження: ${newBuildings.length}).`);
+
+                if (newBuildings.length === 0) {
+                    addLogItem('Немає нових будівель для завантаження.');
+                    document.getElementById('progress-bar').style.width = '100%';
+                    resetUIState();
+                    return;
+                }
+
+                // Group new buildings by street to select representative houses
+                const buildingsByStreet = {};
+                newBuildings.forEach(b => {
+                    const street = b.tags['addr:street'];
+                    if (!buildingsByStreet[street]) buildingsByStreet[street] = [];
+                    buildingsByStreet[street].push(b);
+                });
+
+                const uniqueToQuery = [];
+                const queriedKeys = new Set();
+
+                for (const street in buildingsByStreet) {
+                    const streetBuildings = buildingsByStreet[street];
+                    let count = 0;
+                    for (const b of streetBuildings) {
+                        const house = b.tags['addr:housenumber'];
+                        const key = `${street}||${house}`;
+                        if (!queriedKeys.has(key)) {
+                            queriedKeys.add(key);
+                            uniqueToQuery.push({ street, house });
+                            count++;
+                            if (count >= 3) break;
+                        }
+                    }
+                }
+
+                addLogItem(`Опитуємо ${uniqueToQuery.length} адрес для визначення статусів вулиць...`);
+                document.getElementById('progress-bar').style.width = '30%';
+
+                // POST to batch endpoint
+                const batchRes = await fetch('/api/v1/status/batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(uniqueToQuery.map(item => ({
+                        streetName: item.street,
+                        houseName: item.house
+                    })))
+                });
+
+                if (!batchRes.ok) throw new Error('Помилка виконання пакетного запиту.');
+                const batchResults = await batchRes.json();
+
+                const resolvedStatuses = {};
+                const streetStatuses = {};
+
+                batchResults.forEach(item => {
+                    const key = `${item.streetName}||${item.houseName}`;
+                    const status = item.status || 'UNKNOWN';
+                    resolvedStatuses[key] = status;
+
+                    if (!streetStatuses[item.streetName]) streetStatuses[item.streetName] = [];
+                    streetStatuses[item.streetName].push({
+                        houseNum: parseHouseNum(item.houseName),
+                        status: status
+                    });
+                });
+
+                addLogItem('Параметри отримано. Екстраполяція статусів та рендеринг...');
+                document.getElementById('progress-bar').style.width = '70%';
+
+                // Render and propagate status
+                let countOn = parseInt(document.getElementById('stat-on').textContent);
+                let countOff = parseInt(document.getElementById('stat-off').textContent);
+
+                newBuildings.forEach(b => {
+                    const street = b.tags['addr:street'];
+                    const house = b.tags['addr:housenumber'];
+                    const key = `${street}||${house}`;
+                    
+                    let status = 'UNKNOWN';
+                    let mappingType = 'unknown';
+
+                    if (resolvedStatuses[key] && resolvedStatuses[key] !== 'UNKNOWN') {
+                        status = resolvedStatuses[key];
+                        mappingType = 'direct';
+                    } else if (streetStatuses[street]) {
+                        const validStreetStatuses = streetStatuses[street].filter(s => s.status !== 'UNKNOWN');
+                        const listToUse = validStreetStatuses.length > 0 ? validStreetStatuses : streetStatuses[street];
+                        
+                        if (listToUse.length > 0) {
+                            const targetNum = parseHouseNum(house);
+                            let minDiff = Infinity;
+                            let bestStatus = 'UNKNOWN';
+                            
+                            listToUse.forEach(item => {
+                                const diff = Math.abs(item.houseNum - targetNum);
+                                if (diff < minDiff) {
+                                    minDiff = diff;
+                                    bestStatus = item.status;
+                                }
+                            });
+                            status = bestStatus;
+                            mappingType = 'propagated';
+                        }
+                    }
+
+                    // Increment stats
+                    if (status === 'ON') countOn++;
+                    else if (status === 'OFF' || status === 'EMERGENCY') countOff++;
+
+                    // Draw Polygon
+                    const coordinates = b.geometry.map(pt => [pt.lat, pt.lon]);
+                    
+                    let color = '#4b5563'; // Grey
+                    let fillColor = '#4b5563';
+                    let fillOpacity = 0.5;
+
+                    if (status === 'ON') {
+                        color = '#ea580c';
+                        fillColor = '#f97316';
+                        fillOpacity = 0.8;
+                    } else if (status === 'OFF' || status === 'EMERGENCY') {
+                        color = '#374151';
+                        fillColor = '#111827';
+                        fillOpacity = 0.95;
+                    }
+
+                    const poly = L.polygon(coordinates, {
+                        color: color,
+                        weight: 1,
+                        fillColor: fillColor,
+                        fillOpacity: fillOpacity
+                    });
+
+                    const statusLabel = status === 'ON' ? 'СВІТЛО Є' : (status === 'UNKNOWN' ? 'Невідомо' : 'НЕМАЄ СВІТЛА');
+                    const mappingLabel = mappingType === 'direct' ? 'Прямий запит' : (mappingType === 'propagated' ? 'Екстрапольовано' : 'Невідомо');
+                    
+                    poly.bindPopup(`
+                        <div style="font-size: 12px; line-height: 1.4;">
+                            <div style="font-weight: 700; margin-bottom: 4px; color: ${status === 'ON' ? '#fb923c' : '#f3f4f6'};">
+                                ${street}, ${house}
+                            </div>
+                            <div style="color: #9ca3af; font-size: 11px;">
+                                Статус: <strong>${statusLabel}</strong>
+                            </div>
+                            <div style="color: #6b7280; font-size: 10px; margin-top: 2px;">
+                                Джерело: ${mappingLabel}
+                            </div>
+                        </div>
+                    `);
+                    
+                    buildingPolygonsLayer.addLayer(poly);
+                    renderedBuildingIds.add(b.id);  // Store in cache
+                });
+
+                document.getElementById('stat-on').textContent = countOn;
+                document.getElementById('stat-off').textContent = countOff;
+                document.getElementById('progress-bar').style.width = '100%';
+                addLogItem('Контури успішно оновлено!');
+                
+            } catch (err) {
+                addLogItem('Помилка: ' + err.message);
+                logger.error(err);
+            } finally {
+                resetUIState();
+            }
+        }
+
+        function addLogItem(text) {
+            const logBox = document.getElementById('status-log');
+            const now = new Date();
+            const timeStr = now.toTimeString().split(' ')[0];
+            const div = document.createElement('div');
+            div.className = 'log-item';
+            div.textContent = `[${timeStr}] ${text}`;
+            logBox.appendChild(div);
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        function getCentroid(pts) {
+            let latSum = 0, lonSum = 0;
+            pts.forEach(pt => {
+                latSum += pt.lat;
+                lonSum += pt.lon;
+            });
+            return { lat: latSum / pts.length, lon: lonSum / pts.length };
+        }
+
+        function parseHouseNum(houseStr) {
+            const match = houseStr.match(/\d+/);
+            return match ? parseInt(match[0]) : 1;
+        }
+
+        function resetUIState() {
+            document.getElementById('spinner').style.display = 'none';
+            setTimeout(() => {
+                document.getElementById('progress-container').style.display = 'none';
+            }, 500);
+        }
+    </script>
+</body>
+</html>

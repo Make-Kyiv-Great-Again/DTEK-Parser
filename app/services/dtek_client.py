@@ -72,6 +72,13 @@ class DtekClient:
         config = self._get_dso_config(dso_id)
         base_url = config["base_url"]
         
+        # Check cache first
+        from app.services.cache_service import cache_service
+        cache_key = f"dtek:live_status:{dso_id}:{city.lower().strip()}:{street.lower().strip()}"
+        cached = await cache_service.get(cache_key)
+        if cached is not None:
+            return cached
+
         # Ensure session exists
         if base_url not in self.sessions:
             await self._init_session(base_url)
@@ -125,6 +132,8 @@ class DtekClient:
                 error_msg = resp_data.get("text") or resp_data.get("error") or "Unknown API Error"
                 raise Exception(f"DTEK AJAX returned result=false: {error_msg}")
                 
+            # Cache the successful live response for 5 minutes
+            await cache_service.set(cache_key, resp_data, expire_seconds=300)
             return resp_data
             
         except Exception as e:
