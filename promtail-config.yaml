@@ -19,3 +19,27 @@ scrape_configs:
         target_label: 'container'
       - source_labels: ['__meta_docker_container_log_stream']
         target_label: 'logstream'
+    pipeline_stages:
+      # Docker writes logs wrapped in a JSON structure: {"log": "...", "stream": "...", "time": "..."}
+      - json:
+          expressions:
+            log_line: log
+      # Parse the actual nested JSON application log
+      - json:
+          expressions:
+            level: level
+            logger: logger
+            message: message
+            timestamp: timestamp
+          source: log_line
+      # Promote the log level and python logger module name to Loki labels
+      - labels:
+          level:
+          logger:
+      # Use the application's actual log timestamp instead of Promtail's ingestion time
+      - timestamp:
+          source: timestamp
+          format: RFC3339
+      # Overwrite the log line content with just the clean, readable message
+      - output:
+          source: message
