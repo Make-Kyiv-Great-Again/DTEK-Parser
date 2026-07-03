@@ -326,6 +326,30 @@
             await runRadiusScan(lat, lon);
         });
 
+        async function fetchOverpassData(query) {
+            const instances = [
+                'https://overpass-api.de/api/interpreter',
+                'https://overpass.kumi.systems/api/interpreter',
+                'https://overpass.osm.ch/api/interpreter'
+            ];
+            
+            let lastError = null;
+            for (const instance of instances) {
+                try {
+                    addLogItem(`Запит до Overpass (${new URL(instance).hostname})...`);
+                    const url = `${instance}?data=${encodeURIComponent(query)}`;
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        return await response.json();
+                    }
+                    lastError = new Error(`Overpass returned status ${response.status}`);
+                } catch (err) {
+                    lastError = err;
+                }
+            }
+            throw lastError || new Error("Failed to fetch data from all Overpass API instances.");
+        }
+
         async function runRadiusScan(lat, lon) {
             activeRequests = true;
             document.getElementById('spinner').style.display = 'inline-block';
@@ -359,12 +383,8 @@
 
             try {
                 addLogItem('Запит до OpenStreetMap Overpass API для пошуку будівель...');
-                const overpassUrl = `https://overpass-api.de/api/interpreter?data=[out:json];way(around:1000,${lat},${lon})["addr:housenumber"]["addr:street"];out geom;`;
-                
-                const response = await fetch(overpassUrl);
-                if (!response.ok) throw new Error('Помилка запиту до Overpass API.');
-                
-                const data = await response.json();
+                const query = `[out:json];way(around:1000,${lat},${lon})["addr:housenumber"]["addr:street"];out geom;`;
+                const data = await fetchOverpassData(query);
                 const buildings = data.elements || [];
                 addLogItem(`Знайдено ${buildings.length} будівель з адресами у радіусі.`);
 

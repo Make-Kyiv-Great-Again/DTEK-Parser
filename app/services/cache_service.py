@@ -39,6 +39,17 @@ class CacheService:
             try:
                 val = await self.redis_client.get(key)
                 if val:
+                    parts = key.split(":")
+                    if key.startswith("dtek:live_status:") and len(parts) >= 5:
+                        logger.info(f"Data for address '{parts[3].title()}, {parts[4].title()}' was taken from Redis")
+                    elif key.startswith("yasno:house_group:") and len(parts) >= 6:
+                        logger.info(f"Data for house ID {parts[4]} (street ID {parts[3]}) was taken from Redis")
+                    elif key.startswith("yasno:streets:") and len(parts) >= 5:
+                        logger.info(f"Streets query '{parts[4]}' was taken from Redis")
+                    elif key.startswith("yasno:houses:") and len(parts) >= 6:
+                        logger.info(f"Houses query for street ID {parts[3]} was taken from Redis")
+                    else:
+                        logger.info(f"Data for key '{key}' was taken from Redis")
                     return json.loads(val)
             except Exception as e:
                 logger.warning(f"Redis get error: {e}. Falling back to in-memory.")
