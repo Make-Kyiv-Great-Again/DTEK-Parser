@@ -77,7 +77,7 @@ async def get_regions():
     try:
         return await yasno_client.fetch_regions()
     except Exception as e:
-        logger.error(f"Failed to fetch regions: {e}")
+        logger.warning(f"Failed to fetch regions: {e}")
         # Return fallback static regions if API is down
         return [
             {
@@ -287,7 +287,7 @@ async def get_status(
             else:
                 logger.warning(f"House '{houseName}' not found in DTEK live data for street '{streetName}'. Falling back to Yasno.")
         except Exception as e:
-            logger.error(f"Live DTEK query failed, falling back to Yasno: {e}")
+            logger.warning(f"Live DTEK query failed, falling back to Yasno: {e}")
 
     # Fallback to Yasno static schedules if live query was skipped or failed
     if not live_queried:
@@ -308,7 +308,7 @@ async def get_status(
         planned_resp = await yasno_client.fetch_planned_outages(regionId, dsoId)
         planned_data = planned_resp.get(raw_group_key, {})
     except Exception as e:
-        logger.error(f"Failed to fetch planned outages: {e}")
+        logger.warning(f"Failed to fetch planned outages: {e}")
 
     # 3. Fetch probable outages (weekly schedule)
     weekly_schedule = None
@@ -323,7 +323,7 @@ async def get_status(
                 if mapped_group_key in groups_dict:
                     weekly_schedule = groups_dict[mapped_group_key].get("slots")
     except Exception as e:
-        logger.error(f"Failed to fetch probable outages: {e}")
+        logger.warning(f"Failed to fetch probable outages: {e}")
 
     # 4. Fallback status computation if not live queried
     if not live_queried:
@@ -616,13 +616,13 @@ async def get_status_batch(items: List[AddressItem]):
             try:
                 planned_data_cache = await yasno_client.fetch_planned_outages(region_id, dso_id)
             except Exception as e:
-                logger.error(f"Failed to fetch planned outages in batch: {e}")
+                logger.warning(f"Failed to fetch planned outages in batch: {e}")
                 planned_data_cache = {}
         if probable_data_cache is None:
             try:
                 probable_data_cache = await yasno_client.fetch_probable_outages(region_id, dso_id)
             except Exception as e:
-                logger.error(f"Failed to fetch probable outages in batch: {e}")
+                logger.warning(f"Failed to fetch probable outages in batch: {e}")
                 probable_data_cache = {}
         return planned_data_cache, probable_data_cache
 
@@ -681,7 +681,7 @@ async def get_status_batch(items: List[AddressItem]):
                     dtek_res = await dtek_client.fetch_live_status(dso_id, city, resolved_street_name)
                     dtek_data = dtek_res.get("data", {})
                 except Exception as e:
-                    logger.error(f"Live DTEK fetch failed in batch: {e}")
+                    logger.warning(f"Live DTEK fetch failed in batch: {e}")
                     dtek_data = {}
 
                 # Match helpers
@@ -796,7 +796,7 @@ async def get_status_batch(items: List[AddressItem]):
                                             if active_slot and active_slot.get("type") == "Definite":
                                                 power_status = "OFF"
                             except Exception as ex:
-                                logger.error(f"Yasno fallback failed in batch for house {house_name}: {ex}")
+                                logger.warning(f"Yasno fallback failed in batch for house {house_name}: {ex}")
 
                         results.append({
                             "streetName": street_name,
@@ -804,14 +804,14 @@ async def get_status_batch(items: List[AddressItem]):
                             "status": power_status
                         })
                     except Exception as e:
-                        logger.error(f"Error resolving house {house_name} in batch: {e}")
+                        logger.warning(f"Error resolving house {house_name} in batch: {e}")
                         results.append({
                             "streetName": street_name,
                             "houseName": house_name,
                             "status": "UNKNOWN"
                         })
             except Exception as e:
-                logger.error(f"Error resolving street {street_name} in batch: {e}")
+                logger.warning(f"Error resolving street {street_name} in batch: {e}")
                 for hn in house_names:
                     results.append({"streetName": street_name, "houseName": hn, "status": "UNKNOWN"})
 

@@ -31,7 +31,7 @@ class YasnoClient:
                     if attempt < max_attempts - 1:
                         await asyncio.sleep(0.2 * (attempt + 1))
                         continue
-                    logger.error(f"Yasno API timeout for {url}: {str(e)}")
+                    logger.warning(f"Yasno API timeout for {url}: {str(e)}")
                     raise HTTPException(
                         status_code=504, 
                         detail="Gateway Timeout: Yasno API request timed out"
@@ -40,7 +40,7 @@ class YasnoClient:
                     if response.status_code >= 500 and attempt < max_attempts - 1:
                         await asyncio.sleep(0.2 * (attempt + 1))
                         continue
-                    logger.error(f"Yasno API HTTP error {response.status_code} for {url}: {e.response.text}")
+                    logger.warning(f"Yasno API HTTP error {response.status_code} for {url}: {e.response.text}")
                     raise HTTPException(
                         status_code=502, 
                         detail=f"Bad Gateway: Yasno API returned status code {response.status_code}"
@@ -49,7 +49,7 @@ class YasnoClient:
                     if attempt < max_attempts - 1:
                         await asyncio.sleep(0.2 * (attempt + 1))
                         continue
-                    logger.error(f"Yasno API request error for {url}: {str(e)}")
+                    logger.warning(f"Yasno API request error for {url}: {str(e)}")
                     raise HTTPException(
                         status_code=502, 
                         detail="Bad Gateway: Failed to connect to Yasno API"
@@ -58,7 +58,7 @@ class YasnoClient:
                     if attempt < max_attempts - 1:
                         await asyncio.sleep(0.2 * (attempt + 1))
                         continue
-                    logger.error(f"Yasno API returned invalid JSON: {str(e)}")
+                    logger.warning(f"Yasno API returned invalid JSON: {str(e)}")
                     raise HTTPException(
                         status_code=502, 
                         detail="Bad Gateway: Yasno API returned invalid JSON structure"

@@ -1,13 +1,13 @@
 import re
 import logging
-import httpx
+from curl_cffi.requests import AsyncSession
 from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
 class DtekClient:
     def __init__(self):
-        # Cache sessions per base_url: { base_url: { "client": httpx.AsyncClient, "csrf_token": str } }
+        # Cache sessions per base_url: { base_url: { "client": AsyncSession, "csrf_token": str } }
         self.sessions = {}
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -31,23 +31,22 @@ class DtekClient:
         """Perform initial requests to bypass Incapsula WAF and parse Yii's CSRF token."""
         logger.info(f"Initializing DTEK session for: {base_url}")
         
-        # Initialize AsyncClient with default headers and cookies enabled
-        client = httpx.AsyncClient(headers=self.headers, follow_redirects=True, timeout=15.0)
+        # Initialize AsyncSession with default headers, cookies enabled, and Chrome impersonation
+        client = AsyncSession(impersonate="chrome120", headers=self.headers, allow_redirects=True, timeout=15.0)
         
         try:
-            # 1. First GET to receive WAF challenge and plant session/visid cookies
-            await client.get(f"{base_url}/ua/shutdowns")
+            # 1. GET to receive WAF challenge, plant session/visid cookies, and load Yii layout
+            r = await client.get(f"{base_url}/ua/shutdowns")
+            r.raise_for_status()
             
-            # 2. First dummy POST (without X-Requested-With to prevent AJAX text response) to trigger Yii 400 page
-            post_headers = self.headers.copy()
-            post_headers["Referer"] = f"{base_url}/ua/shutdowns"
-            r = await client.post(f"{base_url}/ua/ajax", data={"method": "getHomeNum"}, headers=post_headers)
+            # 2. Parse CSRF param name and CSRF token from the HTML layout
+            param_match = re.search(r'name="csrf-param" content="([^"]+)"', r.text)
+            csrf_param = param_match.group(1) if param_match else "_csrf-dtek-kem"
             
-            # 3. Parse CSRF token from Yii's HTML error page
             csrf_match = re.search(r'name="csrf-token" content="([^"]+)"', r.text)
             if not csrf_match:
                 logger.error(f"Could not parse CSRF token from Yii layout. Response: {r.text[:300]}")
-                await client.aclose()
+                await client.close()
                 raise HTTPException(
                     status_code=502,
                     detail="Failed to parse CSRF verification token from DTEK portal."
@@ -56,10 +55,11 @@ class DtekClient:
             csrf_token = csrf_match.group(1)
             logger.info(f"Successfully established DTEK WAF session with CSRF token for {base_url}")
             
-            # 4. Save session context
+            # 3. Save session context
             self.sessions[base_url] = {
                 "client": client,
-                "csrf_token": csrf_token
+                "csrf_token": csrf_token,
+                "csrf_param": csrf_param
             }
         except Exception as e:
             logger.error(f"DTEK session initialization failed for {base_url}: {e}")
@@ -69,6 +69,20 @@ class DtekClient:
 
     async def fetch_live_status(self, dso_id: int, city: str, street: str, retry_on_expire: bool = True) -> dict:
         """Fetch the live status of all houses on a street from the DTEK AJAX endpoint."""
+        # Normalize city name to match DTEK's internal database (e.g. prefixing "м. " or "с. ")
+        city = city.strip()
+        if dso_id == 301:  # Dnipro
+            if city == "Дніпро":
+                city = "м. Дніпро"
+            elif city and not (city.startswith("м. ") or city.startswith("с. ") or city.startswith("смт ")):
+                city = f"м. {city}"
+        elif dso_id == 901:  # Kyiv Oblast
+            if city and not (city.startswith("м. ") or city.startswith("с. ") or city.startswith("смт ")):
+                city = f"м. {city}"
+        elif dso_id == 902:  # Kyiv City
+            if city == "Київ":
+                city = "м. Київ"
+
         config = self._get_dso_config(dso_id)
         base_url = config["base_url"]
         
@@ -86,6 +100,7 @@ class DtekClient:
         session_ctx = self.sessions[base_url]
         client = session_ctx["client"]
         csrf_token = session_ctx["csrf_token"]
+        csrf_param = session_ctx.get("csrf_param", "_csrf-dtek-kem")
         
         # Formulate query payload in Yii serialized array format
         post_data = {
@@ -94,7 +109,7 @@ class DtekClient:
             "data[0][value]": city,
             "data[1][name]": "street",
             "data[1][value]": street,
-            "_csrf-dtek-kem": csrf_token
+            csrf_param: csrf_token
         }
         
         headers = self.headers.copy()
@@ -108,7 +123,7 @@ class DtekClient:
             if r.status_code == 200 and ("_Incapsula_Resource" in r.text or (len(r.text) < 1000 and "result" not in r.text)):
                 if retry_on_expire:
                     logger.warning("DTEK session cookie expired or blocked. Retrying...")
-                    await client.aclose()
+                    await client.close()
                     del self.sessions[base_url]
                     return await self.fetch_live_status(dso_id, city, street, retry_on_expire=False)
                 else:
@@ -118,7 +133,7 @@ class DtekClient:
             if r.status_code == 400:
                 if retry_on_expire:
                     logger.warning("DTEK returned 400 Bad Request. CSRF token may have expired. Re-initializing...")
-                    await client.aclose()
+                    await client.close()
                     del self.sessions[base_url]
                     return await self.fetch_live_status(dso_id, city, street, retry_on_expire=False)
                 else:
@@ -137,11 +152,11 @@ class DtekClient:
             return resp_data
             
         except Exception as e:
-            logger.error(f"DTEK AJAX query failed for city='{city}', street='{street}': {e}")
+            logger.warning(f"DTEK AJAX query failed for city='{city}', street='{street}': {e}")
             if retry_on_expire:
                 # Close client, clear cache, and retry once
                 try:
-                    await client.aclose()
+                    await client.close()
                 except:
                     pass
                 if base_url in self.sessions:
@@ -153,7 +168,7 @@ class DtekClient:
         """Close all cached HTTPX client connections."""
         for base_url, session in list(self.sessions.items()):
             try:
-                await session["client"].aclose()
+                await session["client"].close()
             except:
                 pass
         self.sessions.clear()
