@@ -1,7 +1,7 @@
 import logging
 import httpx
 from typing import Dict, Any
-from app.core.exceptions import GeocodingError
+from app.core.exceptions import GeocodingError, AddressNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ class GeocodingService:
         house_number = address.get("house_number", "1")
         street_name = address.get("road") or address.get("street")
         if not street_name:
-            raise GeocodingError("Road/street name could not be resolved from these coordinates.")
+            raise AddressNotFoundError("Не вдалося визначити назву вулиці за цими координатами.")
 
         state = address.get("state", "")
         city = address.get("city", "") or address.get("town", "") or address.get("village", "")
@@ -65,9 +65,6 @@ class GeocodingService:
         if "Дніпро" in city or "Дніпропетровська" in state:
             region_id = 3
             dso_id = 301
-        elif "Київська" in state:
-            region_id = 25
-            dso_id = 901
 
         return {
             "street_name": street_name,

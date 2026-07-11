@@ -1,6 +1,6 @@
 import logging
 import httpx
-from app.config import settings
+from app.core.config import settings
 from app.core.exceptions import ClientConnectionError, ClientResponseError
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ class YasnoClient:
 
     async def fetch_regions(self) -> list:
         """Fetch all available regions and their DSOs."""
-        from app.services.cache_service import cache_service
+        from app.core.cache import cache_service
         cache_key = "yasno:regions"
         cached = await cache_service.get(cache_key)
         if cached is not None:
@@ -75,7 +75,7 @@ class YasnoClient:
 
     async def search_streets(self, region_id: int, query: str, dso_id: int) -> list:
         """Search for streets by region, query string, and DSO ID."""
-        from app.services.cache_service import cache_service
+        from app.core.cache import cache_service
         cache_key = f"yasno:streets:{region_id}:{dso_id}:{query.lower().strip()}"
         cached = await cache_service.get(cache_key)
         if cached is not None:
@@ -92,7 +92,7 @@ class YasnoClient:
 
     async def search_houses(self, region_id: int, street_id: int, query: str, dso_id: int) -> list:
         """Search for houses on a street matching the query prefix."""
-        from app.services.cache_service import cache_service
+        from app.core.cache import cache_service
         cache_key = f"yasno:houses:{region_id}:{street_id}:{dso_id}:{query.lower().strip()}"
         cached = await cache_service.get(cache_key)
         if cached is not None:
@@ -110,7 +110,7 @@ class YasnoClient:
 
     async def fetch_house_group(self, region_id: int, street_id: int, house_id: int, dso_id: int) -> dict:
         """Fetch the group and subgroup for a specific house address."""
-        from app.services.cache_service import cache_service
+        from app.core.cache import cache_service
         cache_key = f"yasno:house_group:{region_id}:{street_id}:{house_id}:{dso_id}"
         cached = await cache_service.get(cache_key)
         if cached is not None:
@@ -128,7 +128,7 @@ class YasnoClient:
 
     async def fetch_planned_outages(self, region_id: int, dso_id: int) -> dict:
         """Fetch planned outages for a region and DSO."""
-        from app.services.cache_service import cache_service
+        from app.core.cache import cache_service
         cache_key = f"yasno:planned_outages:{region_id}:{dso_id}"
         cached = await cache_service.get(cache_key)
         if cached is not None:
@@ -141,7 +141,7 @@ class YasnoClient:
 
     async def fetch_probable_outages(self, region_id: int, dso_id: int) -> dict:
         """Fetch the weekly recurring (probable) outages schedule for a region and DSO."""
-        from app.services.cache_service import cache_service
+        from app.core.cache import cache_service
         cache_key = f"yasno:probable_outages:{region_id}:{dso_id}"
         cached = await cache_service.get(cache_key)
         if cached is not None:

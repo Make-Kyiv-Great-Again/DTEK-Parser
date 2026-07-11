@@ -4,8 +4,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers.api import router as api_router
-from app.routers.web import router as web_router
+from app.web.router import router as web_router
+from app.yasno.router import router as yasno_router
+from app.outages.router import router as outages_router
+from app.dtek.router import router as dtek_router
+
 from app.core.exceptions import (
     AddressNotFoundError,
     OutageGroupNotFoundError,
@@ -15,72 +18,10 @@ from app.core.exceptions import (
     ClientResponseError
 )
 
-import json
-import logging.config
-from datetime import datetime, timezone
-import contextvars
+from app.core.logger import request_context, setup_logging
 import uuid
 
-request_context = contextvars.ContextVar("request_context", default={})
-
-class JSONFormatter(logging.Formatter):
-    def format(self, record):
-        log_record = {
-            "timestamp": datetime.fromtimestamp(record.created, timezone.utc).isoformat(),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-        }
-        ctx = request_context.get()
-        if ctx:
-            log_record.update({
-                "request_id": ctx.get("request_id"),
-                "ip_address": ctx.get("ip_address"),
-                "client_name": ctx.get("client_name")
-            })
-        if record.exc_info:
-            log_record["exception"] = self.formatException(record.exc_info)
-        return json.dumps(log_record, ensure_ascii=False)
-
-LOGGING_CONFIG = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "json": {
-            "()": JSONFormatter,
-        },
-    },
-    "handlers": {
-        "stdout": {
-            "class": "logging.StreamHandler",
-            "formatter": "json",
-            "stream": "ext://sys.stdout",
-        },
-    },
-    "loggers": {
-        "root": {
-            "handlers": ["stdout"],
-            "level": "INFO",
-        },
-        "uvicorn": {
-            "handlers": ["stdout"],
-            "level": "INFO",
-            "propagate": False,
-        },
-        "uvicorn.access": {
-            "handlers": ["stdout"],
-            "level": "INFO",
-            "propagate": False,
-        },
-        "uvicorn.error": {
-            "handlers": ["stdout"],
-            "level": "INFO",
-            "propagate": False,
-        },
-    },
-}
-
-logging.config.dictConfig(LOGGING_CONFIG)
+setup_logging()
 logger = logging.getLogger(__name__)
 
 # Initialize FastAPI App
@@ -118,6 +59,20 @@ async def add_request_context(request: Request, call_next):
     try:
         response = await call_next(request)
         response.headers["X-Request-ID"] = req_id
+        
+        # Access log generation
+        status_code = response.status_code
+        method = request.method
+        path = request.url.path
+        query = f"?{request.url.query}" if request.url.query else ""
+        client_port = request.client.port if request.client else 0
+        log_msg = f"{ip_address}:{client_port} - \"{method} {path}{query} HTTP/1.1\" {status_code}"
+        
+        if status_code >= 400:
+            logger.warning(log_msg)
+        else:
+            logger.info(log_msg)
+            
         return response
     finally:
         request_context.reset(token)
@@ -159,4 +114,6 @@ async def generic_exception_handler(request: Request, exc: Exception):
 
 # Include Routers
 app.include_router(web_router, tags=["Web Examples / Frontends"])
-app.include_router(api_router, tags=["Outage API v1"])
+app.include_router(yasno_router, tags=["Yasno Outages API v1"])
+app.include_router(outages_router, tags=["Outages API v1"])
+app.include_router(dtek_router, tags=["Dtek Outages API v1"])

@@ -86,7 +86,7 @@ class DtekClient:
         base_url = config["base_url"]
         
         # Check cache first
-        from app.services.cache_service import cache_service
+        from app.core.cache import cache_service
         cache_key = f"dtek:live_status:{dso_id}:{city.lower().strip()}:{street.lower().strip()}"
         cached = await cache_service.get(cache_key)
         if cached is not None:

@@ -3,7 +3,7 @@ import logging
 import time
 from typing import Optional, Any
 from collections import OrderedDict
-from app.config import settings
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 

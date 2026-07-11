@@ -1,8 +1,8 @@
 import unittest
 from unittest.mock import AsyncMock, patch
-from app.services.dtek_service import dtek_service
-from app.services.yasno_service import yasno_service
-from app.services.outage_service import outage_service
+from app.dtek.service import dtek_service
+from app.yasno.service import yasno_service
+from app.outages.service import outage_service
 from app.core.exceptions import AddressNotFoundError
 
 class TestServices(unittest.IsolatedAsyncioTestCase):
@@ -24,14 +24,14 @@ class TestServices(unittest.IsolatedAsyncioTestCase):
         matched = dtek_service.find_matched_house("15", dtek_data)
         self.assertIsNone(matched)
 
-    @patch("app.services.yasno_client.yasno_client.search_streets", new_callable=AsyncMock)
+    @patch("app.yasno.client.yasno_client.search_streets", new_callable=AsyncMock)
     async def test_yasno_service_resolve_street_success(self, mock_search):
         mock_search.return_value = [{"id": 100, "value": "вул. Тестова"}]
         street_id, name = await yasno_service.resolve_street_id(25, "Тестова", 902)
         self.assertEqual(street_id, 100)
         self.assertEqual(name, "вул. Тестова")
 
-    @patch("app.services.yasno_client.yasno_client.search_streets", new_callable=AsyncMock)
+    @patch("app.yasno.client.yasno_client.search_streets", new_callable=AsyncMock)
     async def test_yasno_service_resolve_street_not_found(self, mock_search):
         mock_search.return_value = []
         with self.assertRaises(AddressNotFoundError):

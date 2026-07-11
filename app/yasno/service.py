@@ -1,6 +1,6 @@
 import logging
 from typing import List, Tuple, Dict, Any, Optional
-from app.services.yasno_client import yasno_client
+from app.yasno.client import yasno_client
 from app.core.exceptions import AddressNotFoundError, OutageGroupNotFoundError
 from app.utils.normalization import clean_street_name, normalize_house, extract_numeric_part
 
@@ -165,7 +165,7 @@ class YasnoService:
     async def get_planned_outages(self, region_id: int, dso_id: int, raw_group_key: str) -> Dict[str, Any]:
         """Fetches planned outages data for a given group key."""
         try:
-            planned_resp = await yasno_client.fetch_planned_outages(region_id, dso_id)
+            planned_resp = await self.get_raw_planned_outages(region_id, dso_id)
             return planned_resp.get(raw_group_key, {})
         except Exception as e:
             logger.warning(f"Failed to fetch planned outages: {e}")

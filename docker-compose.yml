@@ -31,47 +31,7 @@ services:
     networks:
       - internal-net
 
-  loki:
-    image: grafana/loki:2.9.0
-    container_name: svitlolocator_loki
-    ports:
-      - "3100:3100"
-    volumes:
-      - loki-data:/loki
-    command: -config.file=/etc/loki/local-config.yaml
-    networks:
-      - monitoring
-
-  promtail:
-    image: grafana/promtail:2.9.0
-    container_name: svitlolocator_promtail
-    volumes:
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./promtail-config.yaml:/etc/promtail/config.yml:ro
-      - promtail-data:/run/promtail
-    command: -config.file=/etc/promtail/config.yml
-    networks:
-      - monitoring
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: svitlolocator_grafana
-    ports:
-      - "3000:3000"
-    volumes:
-      - grafana-data:/var/lib/grafana
-    networks:
-      - monitoring
-
 networks:
   traefik-public:
     external: true
   internal-net:
-  monitoring:
-    name: monitoring
-
-volumes:
-  loki-data:
-  promtail-data:
-  grafana-data:

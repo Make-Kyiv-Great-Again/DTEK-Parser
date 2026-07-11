@@ -1,23 +1,5 @@
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
-
-class DsoInfo(BaseModel):
-    id: int
-    name: str
-
-class RegionInfo(BaseModel):
-    id: int
-    value: str
-    hasCities: bool
-    dsos: List[DsoInfo]
-
-class StreetInfo(BaseModel):
-    id: int
-    value: str
-
-class HouseInfo(BaseModel):
-    id: int
-    value: str
 
 class GroupAssignment(BaseModel):
     group: int
@@ -45,15 +27,19 @@ class StatusResponse(BaseModel):
     street_id: int
     house_id: int
     dso_id: int
-    address: str
-    group_info: GroupAssignment
-    power_status: str = Field(description="ON, OFF, or EMERGENCY")
+    
+    region_name: str
+    street_name: str
+    house_name: str
+    
+    group_assignment: GroupAssignment
+    power_status: str
     status_reason: str
-    planned_schedule: Optional[PlannedOutageInfo] = None
-    weekly_schedule: Optional[Dict[str, List[OutageSlotSchema]]] = None
+    planned_schedule: PlannedOutageInfo
+    weekly_schedule: Optional[List[Dict[str, Any]]] = None
     has_power: bool
     group: str
-    last_update: Optional[str] = None
+    last_update: str
 
 class AddressItem(BaseModel):
     streetName: str
@@ -63,3 +49,4 @@ class BatchStatusResponseItem(BaseModel):
     streetName: str
     houseName: str
     status: str
+    reason: str
