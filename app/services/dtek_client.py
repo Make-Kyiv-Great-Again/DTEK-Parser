@@ -1,7 +1,7 @@
 import re
 import logging
 from curl_cffi.requests import AsyncSession
-from fastapi import HTTPException
+from app.core.exceptions import ClientConnectionError, ClientResponseError
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +47,8 @@ class DtekClient:
             if not csrf_match:
                 logger.error(f"Could not parse CSRF token from Yii layout. Response: {r.text[:300]}")
                 await client.close()
-                raise HTTPException(
-                    status_code=502,
-                    detail="Failed to parse CSRF verification token from DTEK portal."
+                raise ClientResponseError(
+                    "Failed to parse CSRF verification token from DTEK portal."
                 )
             
             csrf_token = csrf_match.group(1)
@@ -63,8 +62,8 @@ class DtekClient:
             }
         except Exception as e:
             logger.error(f"DTEK session initialization failed for {base_url}: {e}")
-            if not isinstance(e, HTTPException):
-                raise HTTPException(status_code=502, detail=f"Failed to initialize DTEK WAF session: {str(e)}")
+            if not isinstance(e, (ClientResponseError, ClientConnectionError)):
+                raise ClientConnectionError(f"Failed to initialize DTEK WAF session: {str(e)}") from e
             raise e
 
     async def fetch_live_status(self, dso_id: int, city: str, street: str, retry_on_expire: bool = True) -> dict:
@@ -162,7 +161,7 @@ class DtekClient:
                 if base_url in self.sessions:
                     del self.sessions[base_url]
                 return await self.fetch_live_status(dso_id, city, street, retry_on_expire=False)
-            raise HTTPException(status_code=502, detail=f"Failed to query live DTEK status: {str(e)}")
+            raise ClientResponseError(f"Failed to query live DTEK status: {str(e)}") from e
 
     async def close(self):
         """Close all cached HTTPX client connections."""

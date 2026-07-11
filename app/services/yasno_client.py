@@ -1,7 +1,7 @@
 import logging
 import httpx
-from fastapi import HTTPException
 from app.config import settings
+from app.core.exceptions import ClientConnectionError, ClientResponseError
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +21,9 @@ class YasnoClient:
                     response = await client.request(method, url, params=params)
                     if response.status_code == 404:
                         logger.warning(f"Yasno API returned 404 for {url} with params {params}")
-                        raise HTTPException(
-                            status_code=404, 
-                            detail=f"Resource not found at Yasno API: {path}"
+                        raise ClientResponseError(
+                            f"Resource not found at Yasno API: {path}",
+                            status_code=404
                         )
                     response.raise_for_status()
                     return response.json()
@@ -32,37 +32,34 @@ class YasnoClient:
                         await asyncio.sleep(0.2 * (attempt + 1))
                         continue
                     logger.warning(f"Yasno API timeout for {url}: {str(e)}")
-                    raise HTTPException(
-                        status_code=504, 
-                        detail="Gateway Timeout: Yasno API request timed out"
-                    )
+                    raise ClientConnectionError(
+                        "Gateway Timeout: Yasno API request timed out"
+                    ) from e
                 except httpx.HTTPStatusError as e:
                     if response.status_code >= 500 and attempt < max_attempts - 1:
                         await asyncio.sleep(0.2 * (attempt + 1))
                         continue
                     logger.warning(f"Yasno API HTTP error {response.status_code} for {url}: {e.response.text}")
-                    raise HTTPException(
-                        status_code=502, 
-                        detail=f"Bad Gateway: Yasno API returned status code {response.status_code}"
-                    )
+                    raise ClientResponseError(
+                        f"Bad Gateway: Yasno API returned status code {response.status_code}",
+                        status_code=response.status_code
+                    ) from e
                 except httpx.RequestError as e:
                     if attempt < max_attempts - 1:
                         await asyncio.sleep(0.2 * (attempt + 1))
                         continue
                     logger.warning(f"Yasno API request error for {url}: {str(e)}")
-                    raise HTTPException(
-                        status_code=502, 
-                        detail="Bad Gateway: Failed to connect to Yasno API"
-                    )
+                    raise ClientConnectionError(
+                        "Bad Gateway: Failed to connect to Yasno API"
+                    ) from e
                 except ValueError as e:
                     if attempt < max_attempts - 1:
                         await asyncio.sleep(0.2 * (attempt + 1))
                         continue
                     logger.warning(f"Yasno API returned invalid JSON: {str(e)}")
-                    raise HTTPException(
-                        status_code=502, 
-                        detail="Bad Gateway: Yasno API returned invalid JSON structure"
-                    )
+                    raise ClientResponseError(
+                        "Bad Gateway: Yasno API returned invalid JSON structure"
+                    ) from e
 
     async def fetch_regions(self) -> list:
         """Fetch all available regions and their DSOs."""

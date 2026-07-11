@@ -6,6 +6,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers.api import router as api_router
 from app.routers.web import router as web_router
+from app.core.exceptions import (
+    AddressNotFoundError,
+    OutageGroupNotFoundError,
+    InvalidInputError,
+    GeocodingError,
+    ClientConnectionError,
+    ClientResponseError
+)
 
 import json
 import logging.config
@@ -113,6 +121,32 @@ async def add_request_context(request: Request, call_next):
         return response
     finally:
         request_context.reset(token)
+
+# Domain Exception Handlers
+@app.exception_handler(AddressNotFoundError)
+async def address_not_found_handler(request: Request, exc: AddressNotFoundError):
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+@app.exception_handler(OutageGroupNotFoundError)
+async def outage_group_not_found_handler(request: Request, exc: OutageGroupNotFoundError):
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+@app.exception_handler(InvalidInputError)
+async def invalid_input_handler(request: Request, exc: InvalidInputError):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+@app.exception_handler(GeocodingError)
+async def geocoding_error_handler(request: Request, exc: GeocodingError):
+    return JSONResponse(status_code=502, content={"detail": str(exc)})
+
+@app.exception_handler(ClientConnectionError)
+async def client_connection_handler(request: Request, exc: ClientConnectionError):
+    return JSONResponse(status_code=504, content={"detail": str(exc)})
+
+@app.exception_handler(ClientResponseError)
+async def client_response_handler(request: Request, exc: ClientResponseError):
+    status = exc.status_code if exc.status_code else 502
+    return JSONResponse(status_code=status, content={"detail": str(exc)})
 
 # Generic Exception Handler
 @app.exception_handler(Exception)
