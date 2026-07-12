@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Моніторинг відключень світла v2 (Всі Будівлі)</title>
+    <title>Моніторинг відключень світла v2 (Прогресивний)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
@@ -262,7 +262,7 @@
     <!-- Stats & Progress Panel -->
     <div id="stats-panel" class="overlay-panel">
         <div class="panel-header">
-            <span class="panel-title" id="status-title-text">Завантаження...</span>
+            <span class="panel-title" id="status-title-text">Готовий</span>
             <div class="conn-badge">
                 <span id="conn-text">З'єднання...</span>
                 <div id="conn-dot" class="conn-dot connecting"></div>
@@ -281,7 +281,7 @@
         </div>
         
         <div style="font-size: 12px; color: var(--text-secondary);" id="progress-lbl">
-            Будівлі на карті: <span id="stat-total" style="color: var(--text-primary); font-weight: 600;">0</span>
+            Будівель на карті: <span id="stat-total" style="color: var(--text-primary); font-weight: 600;">0</span>
         </div>
     </div>
 
@@ -312,7 +312,7 @@
             center: [50.4501, 30.5234], // Kyiv Maidan
             zoom: 16,
             zoomControl: false,
-            preferCanvas: true // Render thousands of building shapes in canvas instead of slow SVG DOM!
+            preferCanvas: true // Render all building shapes in canvas
         });
 
         L.control.zoom({ position: 'topright' }).addTo(map);
@@ -327,15 +327,17 @@
         // State tracking variables
         const MIN_ZOOM = 15;
         let ws = null;
+        
         let renderedBuildingIds = new Set();
-        let renderedPolygons = {};
+        let renderedPolygons = {}; // Map of building ID -> Leaflet polygon instance
+        let buildingsByStreet = {}; // Street -> Array of building elements
+        
+        // Cache resolved address statuses
+        let resolvedStatuses = {}; // "street||house" -> status
+        let streetStatuses = {};   // street -> Array of { houseNum, status }
         
         // Bounding box cache to prevent redundant fetching
         let queriedBboxCache = [];
-        
-        // Outage statistics counters
-        let countOn = 0;
-        let countOff = 0;
 
         const zoomAlert = document.getElementById('zoom-alert');
         const connText = document.getElementById('conn-text');
@@ -358,6 +360,11 @@
             connDot.className = 'conn-dot ' + state;
         }
 
+        function parseHouseNum(str) {
+            const match = str.match(/\d+/);
+            return match ? parseInt(match[0], 10) : 0;
+        }
+
         // Check if Bounding Box A is fully contained inside Bounding Box B
         function isBboxContained(child, parent) {
             return child.getSouth() >= parent.getSouth() &&
@@ -369,6 +376,9 @@
         function clearViewportCache() {
             queriedBboxCache = [];
             renderedBuildingIds.clear();
+            buildingsByStreet = {};
+            resolvedStatuses = {};
+            streetStatuses = {};
             
             // Remove all existing polygons
             for (let id in renderedPolygons) {
@@ -376,15 +386,22 @@
             }
             renderedPolygons = {};
             
-            countOn = 0;
-            countOff = 0;
             updateStatsUI();
-            
             addLogItem('Кеш переглядів та будівлі очищено.');
             handleMapChange();
         }
 
         function updateStatsUI() {
+            let countOn = 0;
+            let countOff = 0;
+            
+            // Recount stats from rendered polygons
+            for (let id in renderedPolygons) {
+                const poly = renderedPolygons[id];
+                if (poly.options.status === 'ON') countOn++;
+                else if (poly.options.status === 'OFF' || poly.options.status === 'EMERGENCY') countOff++;
+            }
+            
             document.getElementById('stat-on').textContent = countOn;
             document.getElementById('stat-off').textContent = countOff;
             document.getElementById('stat-total').textContent = renderedBuildingIds.size;
@@ -418,73 +435,140 @@
             ws.onmessage = (event) => {
                 const msg = JSON.parse(event.data);
                 
-                if (msg.type === 'status') {
-                    statusText.textContent = msg.message;
-                    addLogItem(msg.message);
+                if (msg.type === 'status_update') {
+                    // Update cache with the resolved status
+                    const key = `${msg.street}||${msg.house}`;
+                    resolvedStatuses[key] = msg.status;
+                    
+                    if (!streetStatuses[msg.street]) {
+                        streetStatuses[msg.street] = [];
+                    }
+                    
+                    // Prevent duplicate street status entries
+                    const existingIdx = streetStatuses[msg.street].findIndex(item => item.houseStr === msg.house);
+                    const newEntry = {
+                        houseStr: msg.house,
+                        houseNum: parseHouseNum(msg.house),
+                        status: msg.status,
+                        reason: msg.reason
+                    };
+                    
+                    if (existingIdx !== -1) {
+                        streetStatuses[msg.street][existingIdx] = newEntry;
+                    } else {
+                        streetStatuses[msg.street].push(newEntry);
+                    }
+                    
+                    addLogItem(`Адреса вирішена: ${msg.street}, ${msg.house} -> ${msg.status}`);
+                    
+                    // Propagate/extrapolate and color the buildings on this street
+                    updateStreetBuildings(msg.street);
                 } 
                 else if (msg.type === 'error') {
-                    statusText.textContent = 'Помилка';
                     addLogItem(`Помилка сервера: ${msg.message}`);
-                } 
-                else if (msg.type === 'buildings_batch') {
-                    renderBuildingsBatch(msg.buildings);
                 }
             };
         }
 
-        // Render progressive batch of buildings
-        function renderBuildingsBatch(buildings) {
-            buildings.forEach(b => {
-                // Prevent duplicate rendering
-                if (renderedBuildingIds.has(b.id)) {
-                    return;
-                }
-                renderedBuildingIds.add(b.id);
+        // Extrapolate and render/update color for all buildings on a specific street
+        function updateStreetBuildings(street) {
+            const streetElements = buildingsByStreet[street] || [];
+            const resolvedList = streetStatuses[street] || [];
+            
+            // Filter only valid resolved statuses
+            const validResolved = resolvedList.filter(s => s.status !== 'UNKNOWN');
+            const listToUse = validResolved.length > 0 ? validResolved : resolvedList;
+            
+            if (listToUse.length === 0) return;
 
-                const status = b.status || 'UNKNOWN';
+            streetElements.forEach(b => {
+                const house = b.tags['addr:housenumber'];
+                const key = `${street}||${house}`;
                 
-                // Colors based on status
-                let color = '#4b5563'; // Grey (UNKNOWN)
+                let status = 'UNKNOWN';
+                let reason = 'Немає даних';
+                let mappingType = 'unknown';
+
+                if (resolvedStatuses[key] && resolvedStatuses[key] !== 'UNKNOWN') {
+                    status = resolvedStatuses[key];
+                    reason = listToUse.find(item => item.houseStr === house)?.reason || 'Пряма відповідність';
+                    mappingType = 'direct';
+                } else {
+                    // Propagate closest status
+                    const targetNum = parseHouseNum(house);
+                    let minDiff = Infinity;
+                    let bestStatus = 'UNKNOWN';
+                    let bestReason = '';
+                    
+                    listToUse.forEach(item => {
+                        const diff = Math.abs(item.houseNum - targetNum);
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            bestStatus = item.status;
+                            bestReason = item.reason;
+                        }
+                    });
+                    status = bestStatus;
+                    reason = bestReason;
+                    mappingType = 'propagated';
+                }
+
+                // Determine styling colors
+                let color = '#4b5563'; // Grey
                 let fillColor = '#4b5563';
                 let fillOpacity = 0.4;
 
                 if (status === 'ON') {
-                    color = '#ea580c'; // Vibrant Orange
+                    color = '#ea580c'; // Orange
                     fillColor = '#f97316';
                     fillOpacity = 0.85;
-                    countOn++;
                 } else if (status === 'OFF' || status === 'EMERGENCY') {
                     color = '#1e293b'; // Slate Dark
                     fillColor = '#0f172a';
                     fillOpacity = 0.95;
-                    countOff++;
                 }
 
-                // Render building polygon on Leaflet Map
-                const poly = L.polygon(b.geometry, {
-                    color: color,
-                    weight: 1,
-                    fillColor: fillColor,
-                    fillOpacity: fillOpacity
-                }).addTo(map);
+                // Check if polygon is already drawn
+                if (renderedPolygons[b.id]) {
+                    // Update style of existing polygon
+                    renderedPolygons[b.id].setStyle({
+                        color: color,
+                        fillColor: fillColor,
+                        fillOpacity: fillOpacity
+                    });
+                    // Update stored status option for recount stats
+                    renderedPolygons[b.id].options.status = status;
+                } else {
+                    // Draw new polygon
+                    const coordinates = b.geometry.map(pt => [pt.lat, pt.lon]);
+                    const poly = L.polygon(coordinates, {
+                        color: color,
+                        weight: 1,
+                        fillColor: fillColor,
+                        fillOpacity: fillOpacity,
+                        status: status // Custom property
+                    }).addTo(map);
+                    
+                    renderedPolygons[b.id] = poly;
+                }
 
-                // Cache reference to Layer
-                renderedPolygons[b.id] = poly;
-
-                // Setup interactive tooltip
+                // Update popup contents
                 const statusLabel = status === 'ON' ? 'СВІТЛО Є' : (status === 'UNKNOWN' ? 'Невідомо' : 'НЕМАЄ СВІТЛА');
-                const mappingLabel = b.mapping_type === 'direct' ? 'Пряма адреса' : (b.mapping_type === 'propagated' ? 'Екстрапольовано з вулиці' : 'Невідомо');
+                const mappingLabel = mappingType === 'direct' ? 'Прямий запит' : 'Екстрапольовано з вулиці';
 
-                poly.bindPopup(`
+                renderedPolygons[b.id].bindPopup(`
                     <div style="font-size: 12px; line-height: 1.4;">
                         <div style="font-weight: 700; margin-bottom: 4px; color: ${status === 'ON' ? '#fb923c' : '#f3f4f6'};">
-                            ${b.street}, ${b.house}
+                            ${street}, ${house}
                         </div>
                         <div style="color: #9ca3af; font-size: 11px;">
                             Статус: <strong>${statusLabel}</strong>
                         </div>
                         <div style="color: #6b7280; font-size: 10px; margin-top: 2px;">
                             Джерело: ${mappingLabel}
+                        </div>
+                        <div style="color: #4b5563; font-size: 9px; margin-top: 1px;">
+                            Деталі: ${reason}
                         </div>
                     </div>
                 `);
@@ -493,8 +577,33 @@
             updateStatsUI();
         }
 
+        // Query Overpass directly from the client browser
+        async function fetchOverpassData(query) {
+            const instances = [
+                'https://overpass-api.de/api/interpreter',
+                'https://overpass.kumi.systems/api/interpreter',
+                'https://overpass.osm.ch/api/interpreter'
+            ];
+            
+            let lastError = null;
+            for (const instance of instances) {
+                try {
+                    addLogItem(`Запит до Overpass (${new URL(instance).hostname})...`);
+                    const url = `${instance}?data=${encodeURIComponent(query)}`;
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        return await response.json();
+                    }
+                    lastError = new Error(`Overpass returned status ${response.status}`);
+                } catch (err) {
+                    lastError = err;
+                }
+            }
+            throw lastError || new Error("Failed to fetch data from all Overpass API instances.");
+        }
+
         // Handle Map view shifts (panning/zooming)
-        function handleMapChange() {
+        async function handleMapChange() {
             const zoom = map.getZoom();
             
             if (zoom < MIN_ZOOM) {
@@ -520,18 +629,98 @@
             const expandedBounds = currentBounds.pad(0.1); 
             queriedBboxCache.push(expandedBounds);
 
-            // Fetch coordinates for query
-            const min_lat = currentBounds.getSouth();
-            const min_lon = currentBounds.getWest();
-            const max_lat = currentBounds.getNorth();
-            const max_lon = currentBounds.getEast();
+            const south = currentBounds.getSouth();
+            const west = currentBounds.getWest();
+            const north = currentBounds.getNorth();
+            const east = currentBounds.getEast();
 
-            addLogItem('Оновлення viewport. Надсилання запиту...');
-            
-            ws.send(JSON.stringify({
-                action: "subscribe_viewport",
-                bbox: { min_lat, min_lon, max_lat, max_lon }
-            }));
+            statusText.textContent = 'Сканування екрану...';
+            addLogItem('Пошук нових контурів будинків у полі зору...');
+
+            try {
+                // Fetch geometries directly from browser IP (bypassing VPS 406/504 errors!)
+                const query = `[out:json];way(${south},${west},${north},${east})["addr:housenumber"]["addr:street"];out geom;`;
+                const data = await fetchOverpassData(query);
+                const elements = data.elements || [];
+
+                // Filter new buildings
+                const newBuildings = elements.filter(el => !renderedBuildingIds.has(el.id));
+                addLogItem(`Знайдено ${elements.length} будівель (Нових для завантаження: ${newBuildings.length}).`);
+
+                if (newBuildings.length === 0) {
+                    statusText.textContent = 'Готовий';
+                    return;
+                }
+
+                // Add to street cache and mark as rendered (drawn as gray initially)
+                newBuildings.forEach(b => {
+                    renderedBuildingIds.add(b.id);
+                    const street = b.tags['addr:street'];
+                    if (!buildingsByStreet[street]) {
+                        buildingsByStreet[street] = [];
+                    }
+                    buildingsByStreet[street].push(b);
+                    
+                    // Render initially as gray
+                    const coordinates = b.geometry.map(pt => [pt.lat, pt.lon]);
+                    const poly = L.polygon(coordinates, {
+                        color: '#4b5563',
+                        weight: 1,
+                        fillColor: '#4b5563',
+                        fillOpacity: 0.4,
+                        status: 'UNKNOWN'
+                    }).addTo(map);
+                    
+                    renderedPolygons[b.id] = poly;
+                });
+
+                // Group new buildings by street to find representative houses to query
+                const streetQueryMap = {};
+                newBuildings.forEach(b => {
+                    const street = b.tags['addr:street'];
+                    if (!streetQueryMap[street]) {
+                        streetQueryMap[street] = [];
+                    }
+                    streetQueryMap[street].push(b);
+                });
+
+                const uniqueToQuery = [];
+                const queriedKeys = new Set();
+
+                for (const street in streetQueryMap) {
+                    const streetBuildings = streetQueryMap[street];
+                    let count = 0;
+                    for (const b of streetBuildings) {
+                        const house = b.tags['addr:housenumber'];
+                        const key = `${street}||${house}`;
+                        if (!queriedKeys.has(key)) {
+                            queriedKeys.add(key);
+                            uniqueToQuery.push({ street, house });
+                            count++;
+                            if (count >= 3) break;
+                        }
+                    }
+                }
+
+                if (uniqueToQuery.length === 0) {
+                    statusText.textContent = 'Готовий';
+                    return;
+                }
+
+                // Query address statuses progressively via WebSockets
+                statusText.textContent = 'Опитування статусів...';
+                addLogItem(`Надсилання запиту на опитування ${uniqueToQuery.length} адрес...`);
+                
+                ws.send(JSON.stringify({
+                    action: "resolve_statuses",
+                    addresses: uniqueToQuery
+                }));
+
+            } catch (err) {
+                console.error(err);
+                statusText.textContent = 'Помилка';
+                addLogItem(`Помилка під час сканування: ${err.message}`);
+            }
         }
 
         // Register event listeners
