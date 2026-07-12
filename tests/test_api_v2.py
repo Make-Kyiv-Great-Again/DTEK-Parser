@@ -73,5 +73,11 @@ class TestApiV2(unittest.TestCase):
             self.assertEqual(msg5["type"], "status")
             self.assertIn("completed", msg5["message"])
 
+    def test_get_websocket_info(self):
+        response = self.client.get("/api/v2/ws/info")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["websocket_url"], "/api/v2/ws/outages")
+        self.assertEqual(response.json()["protocol"], "JSON")
+
 if __name__ == "__main__":
     unittest.main()

@@ -4,6 +4,7 @@ from typing import List, Dict, Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import httpx
 from collections import Counter
+from pydantic import BaseModel, Field
 
 from app.yasno.service import yasno_service
 from app.outages.service import outage_service
@@ -196,3 +197,40 @@ async def websocket_outages_endpoint(websocket: WebSocket):
             await websocket.close()
         except:
             pass
+
+class WebSocketInfoResponse(BaseModel):
+    websocket_url: str = Field(..., description="WebSocket URL path for real-time viewport status updates")
+    protocol: str = Field("JSON", description="Message serialization protocol")
+    subscription_action: str = Field("subscribe_viewport", description="Action string to trigger grid subscriptions")
+    subscription_payload: dict = Field(..., description="Required subscription payload parameters (bbox coordinates)")
+    stream_response_payload: dict = Field(..., description="Details of progressively streamed grid cell status responses")
+
+@router.get("/ws/info", response_model=WebSocketInfoResponse)
+async def get_websocket_info():
+    """Retrieve metadata and description for the real-time WebSocket outages endpoint."""
+    return {
+        "websocket_url": "/api/v2/ws/outages",
+        "protocol": "JSON",
+        "subscription_action": "subscribe_viewport",
+        "subscription_payload": {
+            "action": "subscribe_viewport",
+            "bbox": {
+                "min_lat": "float (e.g. 50.4400)",
+                "min_lon": "float (e.g. 30.5000)",
+                "max_lat": "float (e.g. 50.4600)",
+                "max_lon": "float (e.g. 30.5300)"
+            }
+        },
+        "stream_response_payload": {
+            "type": "zone_update",
+            "zone_id": "string (e.g. cell_0_0)",
+            "bbox": {
+                "min_lat": "float",
+                "min_lon": "float",
+                "max_lat": "float",
+                "max_lon": "float"
+            },
+            "status": "string (ON | OFF | PROBABLE | EMERGENCY)",
+            "reason": "string (detailed description of current outage reason)"
+        }
+    }

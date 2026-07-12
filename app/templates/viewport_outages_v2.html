@@ -451,7 +451,7 @@
             };
 
             socket.onerror = (err) => {
-                logger.error('WebSocket Error:', err);
+                console.error('WebSocket Error:', err);
                 socket.close();
             };
         }
