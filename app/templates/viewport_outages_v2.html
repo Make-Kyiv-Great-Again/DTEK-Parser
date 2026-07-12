@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SvitloLocator - Live WebSocket Grid Scanner (v2)</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    
+    <style>
+        :root {
+            --bg-color: #030712;
+            --panel-bg: rgba(17, 24, 39, 0.6);
+            --card-bg: rgba(31, 41, 55, 0.4);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-main: #f9fafb;
+            --text-muted: #9ca3af;
+            --orange-brand: #ea580c;
+            --orange-bright: #fb923c;
+            --indicator-connected: #10b981;
+            --indicator-connecting: #f59e0b;
+            --indicator-disconnected: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            overflow: hidden;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* Sidebar Glassmorphism */
+        .sidebar {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 400px;
+            max-height: calc(100% - 40px);
+            z-index: 10;
+            background: var(--panel-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+            overflow-y: auto;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        h1 {
+            font-size: 22px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #fff 0%, #9ca3af 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* WebSocket Connection Indicator */
+        .conn-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            background: rgba(0, 0, 0, 0.2);
+            padding: 4px 10px;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--indicator-disconnected);
+            box-shadow: 0 0 8px var(--indicator-disconnected);
+        }
+
+        .dot.connected {
+            background-color: var(--indicator-connected);
+            box-shadow: 0 0 10px var(--indicator-connected);
+        }
+
+        .dot.connecting {
+            background-color: var(--indicator-connecting);
+            box-shadow: 0 0 10px var(--indicator-connecting);
+            animation: pulse 1.2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.4; }
+            50% { opacity: 1; }
+            100% { opacity: 0.4; }
+        }
+
+        .description {
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .status-box {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .status-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 12px;
+        }
+
+        .spinner {
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-top: 2px solid var(--orange-bright);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: none;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .status-log {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 11px;
+            color: #60a5fa;
+            max-height: 160px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 10px;
+            padding: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 14px;
+        }
+
+        .log-item {
+            line-height: 1.4;
+            word-break: break-all;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+
+        .stat-card {
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .stat-val {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+
+        .stat-val.orange { color: #f97316; }
+        .stat-val.black { color: #6b7280; }
+        .stat-val.blue { color: #3b82f6; }
+
+        .stat-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        /* Legend Panel */
+        .legend-box {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 16px;
+        }
+
+        .legend-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 12px;
+            color: var(--text-main);
+            margin-bottom: 8px;
+        }
+
+        .legend-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+
+        .legend-color.on {
+            background-color: var(--orange-brand);
+            border-color: var(--orange-bright);
+        }
+
+        .legend-color.off {
+            background-color: #111827;
+            border-color: #374151;
+        }
+
+        .legend-color.probable {
+            background-color: #d97706;
+            border-color: #fbbf24;
+        }
+
+        .legend-color.emergency {
+            background-color: #991b1b;
+            border-color: #ef4444;
+        }
+
+        /* Zoom Notification Alert */
+        .zoom-warning {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.25);
+            color: #fca5a5;
+            border-radius: 12px;
+            padding: 14px;
+            font-size: 13px;
+            line-height: 1.5;
+            text-align: center;
+            margin-bottom: 16px;
+        }
+
+        /* Leaflet Controls Custom CSS */
+        .leaflet-bar {
+            border: 1px solid var(--border-color) !important;
+            box-shadow: none !important;
+            border-radius: 8px !important;
+            overflow: hidden;
+        }
+
+        .leaflet-bar a {
+            background-color: var(--panel-bg) !important;
+            backdrop-filter: blur(10px);
+            color: var(--text-main) !important;
+            border-bottom: 1px solid var(--border-color) !important;
+            transition: background 0.2s;
+        }
+
+        .leaflet-bar a:hover {
+            background-color: rgba(31, 41, 55, 0.8) !important;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Leaflet Map -->
+    <div id="map"></div>
+
+    <!-- Sidebar Panel -->
+    <div class="sidebar">
+        <div class="header">
+            <h1>SvitloLocator v2</h1>
+            <div class="conn-status" id="conn-panel">
+                <span class="dot" id="conn-dot"></span>
+                <span id="conn-text">Disconnected</span>
+            </div>
+        </div>
+        <p class="description">
+            <strong>Географічне зонування (API v2).</strong> Карта ділить поле зору на координатні bounding box сітки. Статуси будинків всередині зон зчитуються та транслюються в режимі реального часу через <strong>WebSockets</strong>.
+        </p>
+
+        <!-- Zoom Warning -->
+        <div id="zoom-alert" class="zoom-warning">
+            Наблизьте карту (Рівень ≥ 15) для запуску WebSocket-трансляції.
+        </div>
+
+        <!-- Status Box -->
+        <div class="status-box" id="status-panel" style="display: none;">
+            <div class="status-title">
+                <span id="status-title-text">Підключення...</span>
+                <span class="spinner" id="spinner"></span>
+            </div>
+            
+            <div class="status-log" id="status-log">
+                <div class="log-item">Очікування наближення...</div>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-val orange" id="stat-on">0</div>
+                    <div class="stat-label">Зі світлом</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-val black" id="stat-off">0</div>
+                    <div class="stat-label">Без світла</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-val blue" id="stat-scanned">0</div>
+                    <div class="stat-label">Всього зон</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="legend-box">
+            <div class="legend-title">Легенда зон</div>
+            <div class="legend-item">
+                <div class="legend-color on"></div>
+                <span>Є світло (ON)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color off"></div>
+                <span>Немає світла (OFF)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color probable"></div>
+                <span>Можливе вимкнення (PROBABLE)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color emergency"></div>
+                <span>Аварійне вимкнення (EMERGENCY)</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script>
+        // Initialize Map
+        const map = L.map('map', {
+            center: [50.4501, 30.5234], // Kyiv Center (Maidan)
+            zoom: 14,
+            zoomControl: false
+        });
+
+        // Add Zoom Control at bottom right
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        // Add Dark Matter Tile Server
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
+        }).addTo(map);
+
+        // Global states
+        let gridLayers = L.layerGroup().addTo(map);
+        let renderedGridCells = {};  // Client-side cache: { zone_key: { polygon: L.rectangle, status: str } }
+        let socket = null;
+        let debounceTimer = null;
+        const MIN_ZOOM = 15;
+
+        // Establish WebSocket Connection
+        connectWebSocket();
+
+        function connectWebSocket() {
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${window.location.host}/api/v2/ws/outages`;
+            
+            setConnectionState('connecting', 'Connecting...');
+            
+            socket = new WebSocket(wsUrl);
+
+            socket.onopen = () => {
+                setConnectionState('connected', 'Connected');
+                addLogItem('Канал зв\'язку встановлено.');
+                handleMapChange(); // Initial query on load
+            };
+
+            socket.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                if (msg.type === 'status') {
+                    addLogItem(msg.message);
+                    if (msg.message.includes('completed') || msg.message.includes('No buildings')) {
+                        document.getElementById('spinner').style.display = 'none';
+                    }
+                } else if (msg.type === 'zone_update') {
+                    renderGridCell(msg);
+                } else if (msg.type === 'error') {
+                    addLogItem(`Помилка API: ${msg.message}`);
+                    document.getElementById('spinner').style.display = 'none';
+                }
+            };
+
+            socket.onclose = () => {
+                setConnectionState('disconnected', 'Disconnected');
+                addLogItem('Зв\'язок розірвано. Повторне підключення за 3с...');
+                document.getElementById('spinner').style.display = 'none';
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            socket.onerror = (err) => {
+                logger.error('WebSocket Error:', err);
+                socket.close();
+            };
+        }
+
+        function setConnectionState(state, text) {
+            const dot = document.getElementById('conn-dot');
+            const label = document.getElementById('conn-text');
+            
+            dot.className = 'dot';
+            if (state === 'connected') dot.classList.add('connected');
+            else if (state === 'connecting') dot.classList.add('connecting');
+            
+            label.textContent = text;
+        }
+
+        // Listen for map movements and zoom levels
+        map.on('moveend', () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(handleMapChange, 500); // 500ms debouncing
+        });
+
+        async function handleMapChange() {
+            const zoom = map.getZoom();
+            const zoomAlert = document.getElementById('zoom-alert');
+            const statusPanel = document.getElementById('status-panel');
+
+            if (zoom < MIN_ZOOM) {
+                zoomAlert.style.display = 'block';
+                statusPanel.style.display = 'none';
+                return;
+            }
+
+            zoomAlert.style.display = 'none';
+            statusPanel.style.display = 'block';
+
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                addLogItem('Очікування підключення WebSocket...');
+                return;
+            }
+
+            // Fetch current viewport bounding box
+            const bounds = map.getBounds();
+            const min_lat = bounds.getSouth();
+            const min_lon = bounds.getWest();
+            const max_lat = bounds.getNorth();
+            const max_lon = bounds.getEast();
+
+            document.getElementById('spinner').style.display = 'inline-block';
+            document.getElementById('status-title-text').textContent = 'Трансляція viewport...';
+
+            // Send subscription request
+            socket.send(JSON.stringify({
+                action: "subscribe_viewport",
+                bbox: { min_lat, min_lon, max_lat, max_lon }
+            }));
+        }
+
+        function renderGridCell(cellData) {
+            const bbox = cellData.bbox;
+            const zoneId = cellData.zone_id;
+            const status = cellData.status;
+            const reason = cellData.reason;
+
+            // Coordinate key for cache matching
+            const key = `${bbox.min_lat.toFixed(5)}:${bbox.min_lon.toFixed(5)}:${bbox.max_lat.toFixed(5)}:${bbox.max_lon.toFixed(5)}`;
+
+            // Check if cell is already rendered with the same status
+            if (renderedGridCells[key]) {
+                if (renderedGridCells[key].status === status) {
+                    return; // Skip rendering
+                }
+                // If status changed, remove old rectangle
+                gridLayers.removeLayer(renderedGridCells[key].polygon);
+            }
+
+            // Map status to visual styles
+            let color = '#4b5563'; // Grey fallback
+            let fillColor = '#4b5563';
+            let fillOpacity = 0.4;
+
+            if (status === 'ON') {
+                color = '#ea580c';
+                fillColor = '#f97316';
+                fillOpacity = 0.45;
+            } else if (status === 'OFF') {
+                color = '#374151';
+                fillColor = '#111827';
+                fillOpacity = 0.65;
+            } else if (status === 'PROBABLE') {
+                color = '#d97706';
+                fillColor = '#fb923c';
+                fillOpacity = 0.4;
+            } else if (status === 'EMERGENCY') {
+                color = '#991b1b';
+                fillColor = '#ef4444';
+                fillOpacity = 0.5;
+            }
+
+            const bounds = [
+                [bbox.min_lat, bbox.min_lon],
+                [bbox.max_lat, bbox.max_lon]
+            ];
+
+            const rect = L.rectangle(bounds, {
+                color: color,
+                weight: 1.5,
+                fillColor: fillColor,
+                fillOpacity: fillOpacity,
+                dashArray: status === 'PROBABLE' ? '4, 4' : null
+            });
+
+            rect.bindPopup(`
+                <div style="font-size: 12px; line-height: 1.4;">
+                    <div style="font-weight: 700; margin-bottom: 4px; color: ${status === 'ON' ? '#fb923c' : '#f3f4f6'};">
+                        Геозона: ${zoneId}
+                    </div>
+                    <div style="color: #9ca3af; font-size: 11px;">
+                        Статус: <strong>${status}</strong>
+                    </div>
+                    <div style="color: #6b7280; font-size: 10px; margin-top: 2px;">
+                        Деталі: ${reason}
+                    </div>
+                </div>
+            `);
+
+            gridLayers.addLayer(rect);
+
+            // Save in cache
+            renderedGridCells[key] = {
+                polygon: rect,
+                status: status
+            };
+
+            // Recalculate stats
+            updateStats();
+        }
+
+        function updateStats() {
+            let on = 0, off = 0, total = 0;
+            for (const key in renderedGridCells) {
+                total++;
+                const status = renderedGridCells[key].status;
+                if (status === 'ON') on++;
+                else if (status === 'OFF' || status === 'EMERGENCY') off++;
+            }
+            document.getElementById('stat-on').textContent = on;
+            document.getElementById('stat-off').textContent = off;
+            document.getElementById('stat-scanned').textContent = total;
+        }
+
+        function addLogItem(text) {
+            const logBox = document.getElementById('status-log');
+            const now = new Date();
+            const timeStr = now.toTimeString().split(' ')[0];
+            const div = document.createElement('div');
+            div.className = 'log-item';
+            div.textContent = `[${timeStr}] ${text}`;
+            logBox.appendChild(div);
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+    </script>
+</body>
+</html>

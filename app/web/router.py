@@ -28,3 +28,8 @@ async def read_radius_outages_demo(request: Request):
 async def read_viewport_outages_demo(request: Request):
     """Render the dynamic viewport-based neighborhood outage mapping demo page."""
     return templates.TemplateResponse(request, "viewport_outages_demo.html")
+
+@router.get("/ViewportOutages/DemoV2", response_class=HTMLResponse)
+async def read_viewport_outages_demov2(request: Request):
+    """Render the new real-time WebSocket grid-based neighborhood outage mapping demo page."""
+    return templates.TemplateResponse(request, "viewport_outages_v2.html")

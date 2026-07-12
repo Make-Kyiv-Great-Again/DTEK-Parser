@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.web.router import router as web_router
 from app.yasno.router import router as yasno_router
 from app.outages.router import router as outages_router
+from app.outages.router_v2 import router as outages_router_v2
 from app.dtek.router import router as dtek_router
 
 from app.core.exceptions import (
@@ -116,4 +117,5 @@ async def generic_exception_handler(request: Request, exc: Exception):
 app.include_router(web_router, tags=["Web Examples / Frontends"])
 app.include_router(yasno_router, tags=["Yasno Outages API v1"])
 app.include_router(outages_router, tags=["Outages API v1"])
+app.include_router(outages_router_v2, tags=["Outages API v2"])
 app.include_router(dtek_router, tags=["Dtek Outages API v1"])
