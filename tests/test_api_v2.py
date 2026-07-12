@@ -13,11 +13,17 @@ class TestApiV2(unittest.TestCase):
     @patch("app.outages.router_v2.yasno_service.resolve_house_id", new_callable=AsyncMock)
     @patch("app.outages.router_v2.outage_service.get_status", new_callable=AsyncMock)
     def test_websocket_stream_grid_updates(self, mock_get_status, mock_resolve_house, mock_resolve_street, mock_overpass):
-        # 1. Mock Overpass to return 1 building in Kyiv center
+        # 1. Mock Overpass to return 1 building with outline geometry
         mock_overpass.return_value = {
             "elements": [
                 {
-                    "center": {"lat": 50.4501, "lon": 30.5234},
+                    "id": 12345,
+                    "geometry": [
+                        {"lat": 50.4501, "lon": 30.5234},
+                        {"lat": 50.4502, "lon": 30.5234},
+                        {"lat": 50.4502, "lon": 30.5235},
+                        {"lat": 50.4501, "lon": 30.5235}
+                    ],
                     "tags": {
                         "addr:street": "Вишнева",
                         "addr:housenumber": "1"
@@ -46,34 +52,30 @@ class TestApiV2(unittest.TestCase):
                 }
             })
             
-            # Message 1: Querying Overpass
+            # Message 1: Searching buildings
             msg1 = websocket.receive_json()
             self.assertEqual(msg1["type"], "status")
-            self.assertIn("Querying", msg1["message"])
+            self.assertIn("Шукаємо", msg1["message"])
             
             # Message 2: Found X buildings
             msg2 = websocket.receive_json()
             self.assertEqual(msg2["type"], "status")
-            self.assertIn("Found", msg2["message"])
+            self.assertIn("Знайдено", msg2["message"])
 
-            # Message 3: Resolving grid
+            # Message 3: Buildings batch
             msg3 = websocket.receive_json()
-            self.assertEqual(msg3["type"], "status")
-            self.assertIn("Resolving", msg3["message"])
+            self.assertEqual(msg3["type"], "buildings_batch")
+            self.assertEqual(len(msg3["buildings"]), 1)
+            self.assertEqual(msg3["buildings"][0]["id"], 12345)
+            self.assertEqual(msg3["buildings"][0]["status"], "ON")
 
-            # Message 4: Zone Update (progressive stream)
+            # Message 4: Completed
             msg4 = websocket.receive_json()
-            self.assertEqual(msg4["type"], "zone_update")
-            self.assertEqual(msg4["status"], "ON")
-            self.assertEqual(msg4["reason"], "Stable power")
-            self.assertIn("bbox", msg4)
-
-            # Message 5: Completed
-            msg5 = websocket.receive_json()
-            self.assertEqual(msg5["type"], "status")
-            self.assertIn("completed", msg5["message"])
+            self.assertEqual(msg4["type"], "status")
+            self.assertIn("completed", msg4["message"])
 
     def test_get_websocket_info(self):
+        # We override standard JSON serialization validation check
         response = self.client.get("/api/v2/ws/info")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["websocket_url"], "/api/v2/ws/outages")
