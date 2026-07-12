@@ -13,21 +13,30 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v2")
 
 async def fetch_overpass_data(query: str) -> dict:
-    """Queries OSM Overpass API servers with retry fallbacks."""
+    """Queries OSM Overpass API servers with manual url-encoding and Accept-Encoding restrictions."""
+    import urllib.parse
     instances = [
         "https://overpass-api.de/api/interpreter",
-        "https://overpass.kumi.systems/api/interpreter",
-        "https://overpass.osm.ch/api/interpreter"
+        "https://overpass.kumi.systems/api/interpreter"
     ]
-    for url in instances:
+    query_encoded = urllib.parse.quote(query)
+    
+    headers = {
+        "User-Agent": "curl/8.7.1",
+        "Accept": "*/*",
+        "Accept-Encoding": "gzip, deflate"  # Explicitly omit 'br' (Brotli) to prevent 406 Not Acceptable
+    }
+    for base_url in instances:
+        url = f"{base_url}?data={query_encoded}"
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                r = await client.get(url, params={"data": query})
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                r = await client.get(url, headers=headers)
                 if r.status_code == 200:
                     return r.json()
+                logger.warning(f"Overpass instance {url} returned status code {r.status_code}")
         except Exception as e:
             logger.warning(f"Overpass instance {url} failed: {e}")
-    raise Exception("All Overpass API instances failed.")
+    raise Exception("All Overpass API instances failed or timed out.")
 
 def partition_bbox(min_lat: float, min_lon: float, max_lat: float, max_lon: float, rows: int = 6, cols: int = 6) -> List[Dict[str, Any]]:
     """Divides a bounding box into N x M rectangular grid cells."""
@@ -57,6 +66,7 @@ async def stream_grid_updates(websocket: WebSocket, bbox: dict):
         
         # Query OSM Overpass for building tags in the viewport
         query = f'[out:json];way({min_lat},{min_lon},{max_lat},{max_lon})["addr:housenumber"]["addr:street"];out center;'
+        logger.info(f"Constructed Overpass Query: {query}")
         data = await fetch_overpass_data(query)
         elements = data.get("elements", [])
 
