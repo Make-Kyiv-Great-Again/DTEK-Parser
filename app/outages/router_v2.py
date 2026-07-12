@@ -15,7 +15,12 @@ router = APIRouter(prefix="/api/v2")
 async def fetch_overpass_data(query: str) -> dict:
     """Queries OSM Overpass API servers with manual url-encoding and Accept-Encoding restrictions."""
     import urllib.parse
+    import subprocess
+    import json
+    
     instances = [
+        "https://z.overpass-api.de/api/interpreter",
+        "https://lz4.overpass-api.de/api/interpreter",
         "https://overpass-api.de/api/interpreter",
         "https://overpass.kumi.systems/api/interpreter"
     ]
@@ -26,6 +31,8 @@ async def fetch_overpass_data(query: str) -> dict:
         "Accept": "*/*",
         "Accept-Encoding": "gzip, deflate"  # Explicitly omit 'br' (Brotli) to prevent 406 Not Acceptable
     }
+    
+    # 1. Try standard async HTTP requests
     for base_url in instances:
         url = f"{base_url}?data={query_encoded}"
         try:
@@ -36,7 +43,31 @@ async def fetch_overpass_data(query: str) -> dict:
                 logger.warning(f"Overpass instance {url} returned status code {r.status_code}")
         except Exception as e:
             logger.warning(f"Overpass instance {url} failed: {e}")
-    raise Exception("All Overpass API instances failed or timed out.")
+            
+    # 2. Final bulletproof fallback: execute curl as a subprocess (bypasses library level blocks)
+    logger.info("Falling back to local curl execution for Overpass query...")
+    try:
+        cmd = [
+            "curl",
+            "-s",
+            "-G",
+            "https://overpass-api.de/api/interpreter",
+            "--data-urlencode",
+            f"data={query}"
+        ]
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(cmd, capture_output=True, text=True, timeout=25.0)
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return json.loads(result.stdout)
+        else:
+            logger.warning(f"Process fallback curl failed: {result.stderr or result.stdout[:200]}")
+    except Exception as e:
+        logger.warning(f"Failed executing process fallback curl: {e}")
+        
+    raise Exception("All Overpass API instances and process fallbacks failed or timed out.")
 
 def partition_bbox(min_lat: float, min_lon: float, max_lat: float, max_lon: float, rows: int = 6, cols: int = 6) -> List[Dict[str, Any]]:
     """Divides a bounding box into N x M rectangular grid cells."""
