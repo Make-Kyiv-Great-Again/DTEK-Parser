@@ -52,6 +52,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik-public"
       - "traefik.http.routers.overpass.rule=(Host(`svitlo-finder.xyz`) || Host(`www.svitlo-finder.xyz`)) && PathPrefix(`/overpass`)"
+      - "traefik.http.routers.overpass.priority=100"
       - "traefik.http.routers.overpass.entrypoints=websecure"
       - "traefik.http.routers.overpass.tls=true"
       - "traefik.http.routers.overpass.tls.certresolver=myresolver"
