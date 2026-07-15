@@ -40,9 +40,11 @@ services:
       - overpass-db:/db
     environment:
       - OVERPASS_MODE=init
-      # Посилання на pbf-файл лише для Києва та області (з сервісу geo2day або аналогів)
-      - OVERPASS_PLANET_URL=https://geo2day.com/europe/ukraine/kiev_oblast.pbf
-      # Вимикаємо хвилинні оновлення, щоб база не розросталася без вашого відома
+      # Стабільне посилання на OSM екстракт Києва (BBBike)
+      - OVERPASS_PLANET_URL=https://download.bbbike.org/osm/bbbike/Kiew/Kiew.osm.pbf
+      # Препроцесинг для конвертації PBF у формат OSM BZ2 за допомогою osmium
+      - OVERPASS_PLANET_PREPROCESS=mv /db/planet.osm.bz2 /db/planet.osm.pbf && osmium cat -o /db/planet.osm.bz2 /db/planet.osm.pbf && rm /db/planet.osm.pbf
+      # Вимикаємо оновлення метаданих
       - OVERPASS_META=no
     restart: always
     networks:
