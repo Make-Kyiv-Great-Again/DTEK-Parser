@@ -31,6 +31,37 @@ services:
     networks:
       - internal-net
 
+  overpass:
+    image: wiktorn/overpass-api:latest
+    container_name: local_overpass
+    ports:
+      - "12345:80"
+    volumes:
+      - overpass-db:/db
+    environment:
+      - OVERPASS_MODE=init
+      # Посилання на pbf-файл лише для Києва та області (з сервісу geo2day або аналогів)
+      - OVERPASS_PLANET_URL=https://geo2day.com/europe/ukraine/kiev_oblast.pbf
+      # Вимикаємо хвилинні оновлення, щоб база не розросталася без вашого відома
+      - OVERPASS_META=no
+    restart: always
+    networks:
+      - traefik-public
+      - internal-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      - "traefik.http.routers.overpass.rule=(Host(`svitlo-finder.xyz`) || Host(`www.svitlo-finder.xyz`)) && PathPrefix(`/overpass`)"
+      - "traefik.http.routers.overpass.entrypoints=websecure"
+      - "traefik.http.routers.overpass.tls=true"
+      - "traefik.http.routers.overpass.tls.certresolver=myresolver"
+      - "traefik.http.middlewares.overpass-stripprefix.stripprefix.prefixes=/overpass"
+      - "traefik.http.routers.overpass.middlewares=overpass-stripprefix"
+      - "traefik.http.services.overpass.loadbalancer.server.port=80"
+
+volumes:
+  overpass-db:
+
 networks:
   traefik-public:
     external: true
