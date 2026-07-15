@@ -38,6 +38,8 @@ services:
       - "12345:80"
     volumes:
       - overpass-db:/db
+    healthcheck:
+      disable: true
     environment:
       - OVERPASS_MODE=init
       # Стабільне посилання на OSM екстракт Києва (BBBike)
