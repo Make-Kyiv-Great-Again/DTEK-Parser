@@ -20,7 +20,10 @@ class OverpassClient:
   node(around:{radius},{lat},{lng})["shop"];
 );
 out body;"""
+        return await self.query_overpass(query)
 
+    async def query_overpass(self, query: str) -> dict:
+        """Executes a raw Overpass QL query against the local Overpass instance with retries."""
         max_attempts = 3
         for attempt in range(max_attempts):
             async with httpx.AsyncClient(timeout=self.timeout) as client:

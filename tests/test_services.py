@@ -80,5 +80,44 @@ class TestServices(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res["region_id"], 25)
         self.assertEqual(res["dso_id"], 902)
 
+    @patch("app.places.client.overpass_client.query_overpass", new_callable=AsyncMock)
+    @patch("app.dtek.service.dtek_service.get_live_street_data", new_callable=AsyncMock)
+    async def test_get_viewport_outages_service(self, mock_get_live, mock_overpass):
+        # Mock Overpass response
+        mock_overpass.return_value = {
+            "elements": [
+                {
+                    "type": "node",
+                    "id": 1,
+                    "lat": 50.4501,
+                    "lon": 30.5234,
+                    "tags": {
+                        "addr:street": "Хрещатик",
+                        "addr:housenumber": "24"
+                    }
+                }
+            ]
+        }
+        
+        # Mock DTEK response
+        mock_get_live.return_value = {
+            "24": {
+                "type": "Definite",
+                "start_date": "10:00",
+                "end_date": "14:00",
+                "details": "Active Outage"
+            }
+        }
+        
+        res = await dtek_service.get_viewport_outages(
+            lat_top=50.4505, lon_left=30.5230,
+            lat_bottom=50.4495, lon_right=30.5240,
+            dso_id=902, city="Київ"
+        )
+        
+        self.assertIn("Хрещатик", res)
+        self.assertIn("24", res["Хрещатик"])
+        self.assertEqual(res["Хрещатик"]["24"]["status"], "OFF")
+
 if __name__ == "__main__":
     unittest.main()

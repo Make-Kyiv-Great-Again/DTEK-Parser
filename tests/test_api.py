@@ -69,5 +69,33 @@ class TestApi(unittest.TestCase):
             self.assertEqual(response.status_code, 502)
             self.assertEqual(response.json(), {"detail": "Nominatim error"})
 
+    @patch("app.dtek.router.dtek_service.get_viewport_outages", new_callable=AsyncMock)
+    def test_get_dtek_viewport_outages_success(self, mock_get_viewport):
+        mock_get_viewport.return_value = {
+            "вулиця Хрещатик": {
+                "18": { "status": "ON", "details": "DTEK Live: Power is active." },
+                "20": { "status": "OFF", "details": "DTEK Live: Active Outage (10:00 - 14:00)" }
+            }
+        }
+        
+        response = self.client.get("/api/v1/dtek/viewport?lat_top=50.4501&lon_left=30.5230&lat_bottom=50.4490&lon_right=30.5250")
+        self.assertEqual(response.status_code, 200)
+        
+        json_data = response.json()
+        self.assertIn("вулиця Хрещатик", json_data)
+        self.assertEqual(json_data["вулиця Хрещатик"]["18"]["status"], "ON")
+        self.assertEqual(json_data["вулиця Хрещатик"]["20"]["status"], "OFF")
+
+    def test_get_dtek_viewport_outages_invalid_input(self):
+        # Invalid Latitude boundary
+        response = self.client.get("/api/v1/dtek/viewport?lat_top=95.0&lon_left=30.5230&lat_bottom=50.4490&lon_right=30.5250")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Latitude coordinate", response.json()["detail"])
+
+        # Invalid Longitude boundary
+        response = self.client.get("/api/v1/dtek/viewport?lat_top=50.4501&lon_left=-190.0&lat_bottom=50.4490&lon_right=30.5250")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Longitude coordinate", response.json()["detail"])
+
 if __name__ == "__main__":
     unittest.main()

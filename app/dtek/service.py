@@ -115,6 +115,86 @@ class DtekService:
             
         return "ON", "DTEK Live: Power is active."
 
+    async def get_viewport_outages(
+        self, lat_top: float, lon_left: float, lat_bottom: float, lon_right: float, dso_id: int, city: str
+    ) -> Dict[str, Any]:
+        """
+        Retrieves all buildings with addresses within the specified bounding box from Overpass,
+        then queries DTEK status concurrently for all unique streets in that viewport.
+        """
+        from app.places.client import overpass_client
+        import asyncio
+
+        min_lat = min(lat_top, lat_bottom)
+        max_lat = max(lat_top, lat_bottom)
+        min_lon = min(lon_left, lon_right)
+        max_lon = max(lon_left, lon_right)
+
+        # 1. Fetch buildings in bounding box from local Overpass instance
+        query = f"""[out:json];
+(
+  node({min_lat},{min_lon},{max_lat},{max_lon})["addr:housenumber"]["addr:street"];
+  way({min_lat},{min_lon},{max_lat},{max_lon})["addr:housenumber"]["addr:street"];
+);
+out center;"""
+
+        try:
+            raw_data = await overpass_client.query_overpass(query)
+            elements = raw_data.get("elements", [])
+        except Exception as e:
+            logger.error(f"Failed to query local Overpass inside viewport: {e}")
+            elements = []
+
+        # 2. Group houses by street
+        street_houses = {}
+        for el in elements:
+            tags = el.get("tags", {})
+            street = tags.get("addr:street")
+            house = tags.get("addr:housenumber")
+            if street and house:
+                if street not in street_houses:
+                    street_houses[street] = set()
+                street_houses[street].add(house)
+
+        # 3. Query DTEK status concurrently for each street with a Semaphore
+        sem = asyncio.Semaphore(5)
+
+        async def fetch_street_status(street_name: str) -> Tuple[str, Dict[str, Any]]:
+            async with sem:
+                dtek_data = await self.get_live_street_data(dso_id, city, street_name)
+                return street_name, dtek_data
+
+        tasks = [fetch_street_status(street) for street in street_houses.keys()]
+        if tasks:
+            results = await asyncio.gather(*tasks)
+            dtek_results_by_street = dict(results)
+        else:
+            dtek_results_by_street = {}
+
+        # 4. Extrapolate statuses and structure final Option 2 payload
+        response_payload = {}
+        for street, houses in street_houses.items():
+            street_payload = {}
+            dtek_data = dtek_results_by_street.get(street, {})
+
+            for house in sorted(houses):
+                matched = self.find_matched_house(house, dtek_data)
+                if matched:
+                    status, reason = self.extract_power_status(matched)
+                    street_payload[house] = {
+                        "status": status,
+                        "details": reason
+                    }
+                else:
+                    # Default: no active outages reported
+                    street_payload[house] = {
+                        "status": "ON",
+                        "details": "DTEK Live: No active outage reported."
+                    }
+            response_payload[street] = street_payload
+
+        return response_payload
+
 # Helper helpers
 import re
 def re_class_check(name: str):
