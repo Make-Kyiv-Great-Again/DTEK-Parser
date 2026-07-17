@@ -73,10 +73,14 @@ services:
       /bin/sh -c "
       if [ ! -f /data/Kiew.osrm ]; then
         echo 'Preparing dependencies...' &&
-        (which wget || (apt-get update && apt-get install -y wget)) &&
+        (which curl || which wget || (
+          echo 'deb http://archive.debian.org/debian/ stretch main' > /etc/apt/sources.list &&
+          echo 'deb http://archive.debian.org/debian-security/ stretch/updates main' >> /etc/apt/sources.list &&
+          apt-get update && apt-get install -y --force-yes wget
+        )) &&
         echo 'Downloading Kiew.osm.pbf...' &&
         mkdir -p /data &&
-        wget -O /data/Kiew.osm.pbf https://download.bbbike.org/osm/bbbike/Kiew/Kiew.osm.pbf &&
+        (curl -L -o /data/Kiew.osm.pbf https://download.bbbike.org/osm/bbbike/Kiew/Kiew.osm.pbf || wget -O /data/Kiew.osm.pbf https://download.bbbike.org/osm/bbbike/Kiew/Kiew.osm.pbf) &&
         echo 'Extracting footprint profile...' &&
         osrm-extract -p /usr/local/share/osrm/profiles/foot.lua /data/Kiew.osm.pbf &&
         echo 'Partitioning...' &&
