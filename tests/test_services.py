@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 from app.dtek.service import dtek_service
 from app.yasno.service import yasno_service
 from app.outages.service import outage_service
@@ -52,6 +52,33 @@ class TestServices(unittest.IsolatedAsyncioTestCase):
         status, reason = outage_service.compute_scheduled_status(planned_data, None, "1.1")
         self.assertEqual(status, "ON")
         self.assertIn("No active", reason)
+
+    @patch("app.outages.geocoding.httpx.AsyncClient.post", new_callable=AsyncMock)
+    async def test_geocoding_service_success(self, mock_post):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "elements": [
+                {
+                    "type": "node",
+                    "id": 1,
+                    "lat": 50.4501,
+                    "lon": 30.5234,
+                    "tags": {
+                        "addr:street": "Хрещатик",
+                        "addr:housenumber": "24"
+                    }
+                }
+            ]
+        }
+        mock_post.return_value = mock_response
+        
+        from app.outages.geocoding import geocoding_service
+        res = await geocoding_service.reverse_geocode(50.4500, 30.5230)
+        self.assertEqual(res["street_name"], "Хрещатик")
+        self.assertEqual(res["house_number"], "24")
+        self.assertEqual(res["region_id"], 25)
+        self.assertEqual(res["dso_id"], 902)
 
 if __name__ == "__main__":
     unittest.main()
