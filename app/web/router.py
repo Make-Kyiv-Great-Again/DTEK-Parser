@@ -29,4 +29,9 @@ async def read_viewport_outages_demo(request: Request):
     """Render the dynamic viewport-based neighborhood outage mapping demo page."""
     return templates.TemplateResponse(request, "viewport_outages_demo.html")
 
+@router.get("/DtekViewport/Demo", response_class=HTMLResponse)
+async def read_dtek_viewport_demo(request: Request):
+    """Render the DTEK viewport-based neighborhood outage mapping demo page."""
+    return templates.TemplateResponse(request, "dtek_viewport_demo.html")
+
 

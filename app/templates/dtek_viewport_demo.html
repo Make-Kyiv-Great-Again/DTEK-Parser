@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SvitloLocator - DTEK Viewport Outages Demo</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+
+    <style>
+        :root {
+            --bg-color: #080b11;
+            --panel-bg: rgba(13, 20, 35, 0.65);
+            --card-bg: rgba(22, 30, 49, 0.65);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --emerald-brand: #10b981;
+            --red-brand: #ef4444;
+            --amber-brand: #f59e0b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            overflow: hidden;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        .sidebar {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 420px;
+            max-height: calc(100% - 40px);
+            z-index: 10;
+            background: var(--panel-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+        }
+
+        h1 {
+            font-size: 22px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #fff 0%, #94a3b8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 6px;
+        }
+
+        .description {
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.5;
+            margin-bottom: 20px;
+        }
+
+        .status-box {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .status-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.1);
+            border-top-color: var(--text-main);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: none;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .results-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            margin-top: 10px;
+            padding-right: 4px;
+        }
+
+        .street-group {
+            margin-bottom: 18px;
+        }
+
+        .street-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #cbd5e1;
+            border-left: 3px solid var(--amber-brand);
+            padding-left: 8px;
+            margin-bottom: 8px;
+        }
+
+        .house-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 8px;
+        }
+
+        .house-card {
+            background: rgba(30, 41, 59, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .house-card:hover {
+            background: rgba(30, 41, 59, 0.7);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .house-number {
+            font-size: 13px;
+            font-weight: 600;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .status-badge {
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .status-badge.on {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--emerald-brand);
+        }
+
+        .status-badge.off {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--red-brand);
+        }
+
+        .status-badge.probable {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--amber-brand);
+        }
+
+        .zoom-warning {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            text-align: center;
+            display: none;
+        }
+
+        /* Custom Scrollbar */
+        .results-container::-webkit-scrollbar {
+            width: 6px;
+        }
+        .results-container::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .results-container::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+
+        /* Custom styling Leaflet scale controls */
+        .leaflet-container {
+            background: #06090e !important;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Map viewport -->
+    <div id="map"></div>
+
+    <!-- Side panel -->
+    <div class="sidebar">
+        <h1>DTEK Viewport Outages</h1>
+        <p class="description">
+            Сканування viewport за допомогою API. Переміщуйте карту Києва для автоматичного завантаження адрес та їх поточних статусів у мережі ДТЕК.
+        </p>
+
+        <div id="zoom-alert" class="zoom-warning">
+            Будь ласка, наблизьте карту (Рівень ≥ 16) для перегляду детального статусу будинків.
+        </div>
+
+        <div class="status-box">
+            <div class="status-info">
+                <span id="status-text">Завантаження карти...</span>
+                <span class="spinner" id="spinner"></span>
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted);" id="stats-summary">
+                Всього: 0 будинків
+            </div>
+        </div>
+
+        <div class="results-container" id="results-list">
+            <div style="text-align: center; padding-top: 40px; color: var(--text-muted); font-size: 13px;">
+                Перетягніть або наблизьте карту для пошуку адрес
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script>
+        const MIN_ZOOM = 16;
+        let map;
+        let queryTimeout;
+
+        // Init map centering Kyiv Maidan Nezalezhnosti
+        map = L.map('map', {
+            zoomControl: false
+        }).setView([50.4501, 30.5234], 16);
+
+        L.control.zoom({
+            position: 'bottomright'
+        }).addTo(map);
+
+        // Dark theme map tiles
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+        }).addTo(map);
+
+        // Add map events
+        map.on('moveend', triggerViewportScan);
+        map.on('zoomend', triggerViewportScan);
+
+        // Initial scan
+        triggerViewportScan();
+
+        function triggerViewportScan() {
+            const zoom = map.getZoom();
+            const zoomAlert = document.getElementById('zoom-alert');
+            const resultsList = document.getElementById('results-list');
+            const statsSummary = document.getElementById('stats-summary');
+            const statusText = document.getElementById('status-text');
+
+            if (zoom < MIN_ZOOM) {
+                zoomAlert.style.display = 'block';
+                statusText.textContent = 'Збільште масштаб';
+                resultsList.innerHTML = '<div style="text-align:center;padding-top:40px;color:var(--text-muted);font-size:13px;">Масштаб занадто малий для сканування.</div>';
+                statsSummary.textContent = 'Всього: 0 будинків';
+                return;
+            }
+
+            zoomAlert.style.display = 'none';
+            statusText.textContent = 'Очікування...';
+
+            // Debounce request to avoid spamming while dragging
+            clearTimeout(queryTimeout);
+            queryTimeout = setTimeout(performScan, 600);
+        }
+
+        async function performScan() {
+            const spinner = document.getElementById('spinner');
+            const statusText = document.getElementById('status-text');
+            const resultsList = document.getElementById('results-list');
+            const statsSummary = document.getElementById('stats-summary');
+
+            spinner.style.display = 'inline-block';
+            statusText.textContent = 'Сканування екрану...';
+
+            const bounds = map.getBounds();
+            const lat_top = bounds.getNorth();
+            const lon_left = bounds.getWest();
+            const lat_bottom = bounds.getSouth();
+            const lon_right = bounds.getEast();
+
+            try {
+                const url = `/api/v1/dtek/viewport?lat_top=${lat_top}&lon_left=${lon_left}&lat_bottom=${lat_bottom}&lon_right=${lon_right}`;
+                const res = await fetch(url);
+                
+                if (!res.ok) {
+                    throw new Error(`Помилка API: ${res.status}`);
+                }
+
+                const data = await res.json();
+                renderResults(data);
+
+            } catch (err) {
+                console.error(err);
+                statusText.textContent = 'Помилка завантаження';
+                resultsList.innerHTML = `<div style="text-align:center;padding-top:40px;color:var(--red-brand);font-size:13px;">Не вдалося отримати дані: ${err.message}</div>`;
+            } finally {
+                spinner.style.display = 'none';
+            }
+        }
+
+        function renderResults(data) {
+            const resultsList = document.getElementById('results-list');
+            const statsSummary = document.getElementById('stats-summary');
+            const statusText = document.getElementById('status-text');
+
+            resultsList.innerHTML = '';
+            let totalHouses = 0;
+            const streets = Object.keys(data);
+
+            if (streets.length === 0) {
+                statusText.textContent = 'Адрес не знайдено';
+                resultsList.innerHTML = '<div style="text-align:center;padding-top:40px;color:var(--text-muted);font-size:13px;">У цій області немає будівель з адресами.</div>';
+                statsSummary.textContent = 'Всього: 0 будинків';
+                return;
+            }
+
+            streets.sort().forEach(street => {
+                const houses = data[street];
+                const houseNumbers = Object.keys(houses);
+                totalHouses += houseNumbers.length;
+
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'street-group';
+
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'street-name';
+                nameDiv.textContent = street;
+                groupDiv.appendChild(nameDiv);
+
+                const gridDiv = document.createElement('div');
+                gridDiv.className = 'house-grid';
+
+                houseNumbers.sort((a,b) => a.localeCompare(b, undefined, {numeric: true})).forEach(houseNum => {
+                    const houseData = houses[houseNum];
+                    const card = document.createElement('div');
+                    card.className = 'house-card';
+                    card.title = houseData.details;
+
+                    const numSpan = document.createElement('span');
+                    numSpan.className = 'house-number';
+                    numSpan.textContent = houseNum;
+                    card.appendChild(numSpan);
+
+                    const badge = document.createElement('span');
+                    badge.className = `status-badge ${houseData.status.toLowerCase()}`;
+                    badge.textContent = houseData.status;
+                    card.appendChild(badge);
+
+                    gridDiv.appendChild(card);
+                });
+
+                groupDiv.appendChild(gridDiv);
+                resultsList.appendChild(groupDiv);
+            });
+
+            statusText.textContent = 'Завершено';
+            statsSummary.textContent = `Всього: ${totalHouses} будинків`;
+        }
+    </script>
+</body>
+</html>

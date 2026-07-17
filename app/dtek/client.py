@@ -28,11 +28,22 @@ class DtekClient:
         return {"base_url": "https://www.dtek-kem.com.ua", "default_city": "м. Київ"}
 
     async def _init_session(self, base_url: str):
-        """Perform initial requests to bypass Incapsula WAF and parse Yii's CSRF token."""
+        """Perform initial requests to bypass WAF and parse Yii's CSRF token."""
         logger.info(f"Initializing DTEK session for: {base_url}")
         
-        # Initialize AsyncSession with default headers, cookies enabled, and Chrome impersonation
-        client = AsyncSession(impersonate="chrome120", headers=self.headers, allow_redirects=True, timeout=15.0)
+        # Standard browser headers to avoid automated JSON headers flagging by WAFs like DDoS-Guard on HTML paths
+        html_headers = {
+            "User-Agent": self.headers["User-Agent"],
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept-Language": "uk,en;q=0.9",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Upgrade-Insecure-Requests": "1"
+        }
+        
+        # Initialize AsyncSession with HTML headers and Chrome impersonation
+        client = AsyncSession(impersonate="chrome120", headers=html_headers, allow_redirects=True, timeout=15.0)
         
         try:
             # 1. GET to receive WAF challenge, plant session/visid cookies, and load Yii layout
