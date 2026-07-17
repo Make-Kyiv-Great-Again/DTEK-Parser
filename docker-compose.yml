@@ -64,8 +64,50 @@ services:
       - "traefik.http.routers.overpass.middlewares=overpass-stripprefix"
       - "traefik.http.services.overpass.loadbalancer.server.port=80"
 
+  osrm:
+    image: osrm/osrm-backend:latest
+    container_name: local_osrm
+    volumes:
+      - osrm-data:/data
+    entrypoint: >
+      /bin/sh -c "
+      if [ ! -f /data/Kiew.osrm ]; then
+        echo 'Preparing dependencies...' &&
+        (which wget || (apt-get update && apt-get install -y wget)) &&
+        echo 'Downloading Kiew.osm.pbf...' &&
+        mkdir -p /data &&
+        wget -O /data/Kiew.osm.pbf https://download.bbbike.org/osm/bbbike/Kiew/Kiew.osm.pbf &&
+        echo 'Extracting footprint profile...' &&
+        osrm-extract -p /usr/local/share/osrm/profiles/foot.lua /data/Kiew.osm.pbf &&
+        echo 'Partitioning...' &&
+        osrm-partition /data/Kiew.osrm &&
+        echo 'Customizing...' &&
+        osrm-customize /data/Kiew.osrm &&
+        echo 'Cleaning up PBF...' &&
+        rm /data/Kiew.osm.pbf;
+      fi;
+      echo 'Starting OSRM foot router...' &&
+      exec osrm-routed --algorithm mld /data/Kiew.osrm
+      "
+    restart: always
+    networks:
+      - traefik-public
+      - internal-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      - "traefik.http.routers.osrm.rule=(Host(`svitlo-finder.xyz`) || Host(`www.svitlo-finder.xyz`)) && PathPrefix(`/osrm`)"
+      - "traefik.http.routers.osrm.priority=100"
+      - "traefik.http.routers.osrm.entrypoints=websecure"
+      - "traefik.http.routers.osrm.tls=true"
+      - "traefik.http.routers.osrm.tls.certresolver=myresolver"
+      - "traefik.http.middlewares.osrm-stripprefix.stripprefix.prefixes=/osrm"
+      - "traefik.http.routers.osrm.middlewares=osrm-stripprefix"
+      - "traefik.http.services.osrm.loadbalancer.server.port=5000"
+
 volumes:
   overpass-db:
+  osrm-data:
 
 networks:
   traefik-public:
