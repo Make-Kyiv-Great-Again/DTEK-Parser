@@ -1,18 +1,20 @@
 <!DOCTYPE html>
 <html lang="uk">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SvitloLocator - Viewport Outage Scanner</title>
-    
+
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
-    
+
     <style>
         :root {
             --bg-color: #0b0f19;
@@ -33,7 +35,8 @@
             font-family: 'Plus Jakarta Sans', sans-serif;
         }
 
-        body, html {
+        body,
+        html {
             width: 100%;
             height: 100%;
             background-color: var(--bg-color);
@@ -115,8 +118,13 @@
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
 
         .status-log {
@@ -179,8 +187,13 @@
             margin-bottom: 2px;
         }
 
-        .stat-val.orange { color: #fb923c; }
-        .stat-val.black { color: #f3f4f6; }
+        .stat-val.orange {
+            color: #fb923c;
+        }
+
+        .stat-val.black {
+            color: #f3f4f6;
+        }
 
         .stat-label {
             font-size: 11px;
@@ -263,6 +276,7 @@
         }
     </style>
 </head>
+
 <body>
 
     <!-- Leaflet Map -->
@@ -272,7 +286,9 @@
     <div class="sidebar">
         <h1>SvitloLocator</h1>
         <p class="description">
-            <strong>Динамічний огляд екрану.</strong> Карта автоматично завантажує будинки у поточному полі зору (viewport) при наближенні та забарвлює їх у <strong>помаранчевий</strong> (зі світлом) або <strong>чорний</strong> (без світла) за допомогою нашого API.
+            <strong>Динамічний огляд екрану.</strong> Карта автоматично завантажує будинки у поточному полі зору
+            (viewport) при наближенні та забарвлює їх у <strong>помаранчевий</strong> (зі світлом) або
+            <strong>чорний</strong> (без світла) за допомогою нашого API.
         </p>
 
         <!-- Zoom Warning -->
@@ -286,7 +302,7 @@
                 <span id="status-title-text">Завантаження...</span>
                 <span class="spinner" id="spinner"></span>
             </div>
-            
+
             <div class="status-log" id="status-log">
                 <div class="log-item">Наблизьте карту для початку сканування.</div>
             </div>
@@ -388,11 +404,9 @@
 
         async function fetchOverpassData(query) {
             const instances = [
-                'https://overpass-api.de/api/interpreter',
-                'https://overpass.kumi.systems/api/interpreter',
-                'https://overpass.osm.ch/api/interpreter'
+                'https://svitlo-finder.xyz/overpass/api/interpreter'
             ];
-            
+
             let lastError = null;
             for (const instance of instances) {
                 try {
@@ -415,7 +429,7 @@
             document.getElementById('status-title-text').textContent = 'Сканування екрану...';
             document.getElementById('progress-container').style.display = 'block';
             document.getElementById('progress-bar').style.width = '10%';
-            
+
             const logBox = document.getElementById('status-log');
             logBox.innerHTML = '';
             addLogItem('Запуск viewport сканування...');
@@ -426,7 +440,7 @@
                 const query = `[out:json];way(${south},${west},${north},${east})["addr:housenumber"]["addr:street"];out geom;`;
                 const data = await fetchOverpassData(query);
                 const elements = data.elements || [];
-                
+
                 // Filter only new buildings
                 const newBuildings = elements.filter(el => !renderedBuildingIds.has(el.id));
                 addLogItem(`Знайдено ${elements.length} будівель (Нових для завантаження: ${newBuildings.length}).`);
@@ -506,7 +520,7 @@
                     const street = b.tags['addr:street'];
                     const house = b.tags['addr:housenumber'];
                     const key = `${street}||${house}`;
-                    
+
                     let status = 'UNKNOWN';
                     let mappingType = 'unknown';
 
@@ -516,12 +530,12 @@
                     } else if (streetStatuses[street]) {
                         const validStreetStatuses = streetStatuses[street].filter(s => s.status !== 'UNKNOWN');
                         const listToUse = validStreetStatuses.length > 0 ? validStreetStatuses : streetStatuses[street];
-                        
+
                         if (listToUse.length > 0) {
                             const targetNum = parseHouseNum(house);
                             let minDiff = Infinity;
                             let bestStatus = 'UNKNOWN';
-                            
+
                             listToUse.forEach(item => {
                                 const diff = Math.abs(item.houseNum - targetNum);
                                 if (diff < minDiff) {
@@ -540,7 +554,7 @@
 
                     // Draw Polygon
                     const coordinates = b.geometry.map(pt => [pt.lat, pt.lon]);
-                    
+
                     let color = '#4b5563'; // Grey
                     let fillColor = '#4b5563';
                     let fillOpacity = 0.5;
@@ -564,7 +578,7 @@
 
                     const statusLabel = status === 'ON' ? 'СВІТЛО Є' : (status === 'UNKNOWN' ? 'Невідомо' : 'НЕМАЄ СВІТЛА');
                     const mappingLabel = mappingType === 'direct' ? 'Прямий запит' : (mappingType === 'propagated' ? 'Екстрапольовано' : 'Невідомо');
-                    
+
                     poly.bindPopup(`
                         <div style="font-size: 12px; line-height: 1.4;">
                             <div style="font-weight: 700; margin-bottom: 4px; color: ${status === 'ON' ? '#fb923c' : '#f3f4f6'};">
@@ -578,7 +592,7 @@
                             </div>
                         </div>
                     `);
-                    
+
                     buildingPolygonsLayer.addLayer(poly);
                     renderedBuildingIds.add(b.id);  // Store in cache
                 });
@@ -587,7 +601,7 @@
                 document.getElementById('stat-off').textContent = countOff;
                 document.getElementById('progress-bar').style.width = '100%';
                 addLogItem('Контури успішно оновлено!');
-                
+
             } catch (err) {
                 addLogItem('Помилка: ' + err.message);
                 logger.error(err);
@@ -629,4 +643,5 @@
         }
     </script>
 </body>
+
 </html>

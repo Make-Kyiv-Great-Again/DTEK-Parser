@@ -23,10 +23,7 @@ def parse_house_num(house_str: str) -> int:
 async def fetch_overpass_data(query: str) -> dict:
     """Queries OSM Overpass API servers with manual url-encoding, Accept-Encoding restrictions, and curl fallback."""
     instances = [
-        "https://z.overpass-api.de/api/interpreter",
-        "https://lz4.overpass-api.de/api/interpreter",
-        "https://overpass-api.de/api/interpreter",
-        "https://overpass.kumi.systems/api/interpreter"
+        "https://svitlo-finder.xyz/overpass/api/interpreter"
     ]
     query_encoded = urllib.parse.quote(query)
     
@@ -55,7 +52,7 @@ async def fetch_overpass_data(query: str) -> dict:
             "curl",
             "-s",
             "-G",
-            "https://overpass-api.de/api/interpreter",
+            "https://svitlo-finder.xyz/overpass/api/interpreter",
             "--data-urlencode",
             f"data={query}"
         ]

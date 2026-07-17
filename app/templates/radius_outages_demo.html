@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="uk">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -19,9 +20,12 @@
             --primary-hover: #ea580c;
             --text-main: #f3f4f6;
             --text-muted: #9ca3af;
-            --status-on: #f97316; /* Orange */
-            --status-off: #111827; /* Black */
-            --status-unknown: #4b5563; /* Grey */
+            --status-on: #f97316;
+            /* Orange */
+            --status-off: #111827;
+            /* Black */
+            --status-unknown: #4b5563;
+            /* Grey */
         }
 
         * {
@@ -220,7 +224,9 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         /* Leaflet popup customization */
@@ -232,11 +238,13 @@
             border-radius: 12px !important;
             font-family: 'Inter', sans-serif !important;
         }
+
         .leaflet-popup-tip {
             background: var(--card-bg) !important;
         }
     </style>
 </head>
+
 <body>
 
     <!-- Leaflet Map -->
@@ -246,7 +254,9 @@
     <div class="sidebar">
         <h1>SvitloLocator</h1>
         <p class="description">
-            **1км Радіусний Огляд.** Натисніть у будь-якій точці карти. Додаток автоматично завантажить контури всіх будівель у радіусі 1 км та розфарбує їх в **помаранчевий** (зі світлом) або **чорний** (без світла) кольори, використовуючи лише наше API та розумне розповсюдження.
+            **1км Радіусний Огляд.** Натисніть у будь-якій точці карти. Додаток автоматично завантажить контури всіх
+            будівель у радіусі 1 км та розфарбує їх в **помаранчевий** (зі світлом) або **чорний** (без світла) кольори,
+            використовуючи лише наше API та розумне розповсюдження.
         </p>
 
         <!-- Status Box -->
@@ -255,7 +265,7 @@
                 <span id="status-title-text">Очікування натискання на карту</span>
                 <span class="spinner" id="spinner" style="display: none;"></span>
             </div>
-            
+
             <div class="status-log" id="status-log">
                 <div class="log-item">Натисніть на карту для початку сканування.</div>
             </div>
@@ -328,11 +338,9 @@
 
         async function fetchOverpassData(query) {
             const instances = [
-                'https://overpass-api.de/api/interpreter',
-                'https://overpass.kumi.systems/api/interpreter',
-                'https://overpass.osm.ch/api/interpreter'
+                'https://svitlo-finder.xyz/overpass/api/interpreter'
             ];
-            
+
             let lastError = null;
             for (const instance of instances) {
                 try {
@@ -356,7 +364,7 @@
             document.getElementById('status-title-text').textContent = 'Сканування радіусу...';
             document.getElementById('progress-container').style.display = 'block';
             document.getElementById('progress-bar').style.width = '0%';
-            
+
             const logBox = document.getElementById('status-log');
             logBox.innerHTML = '';
             addLogItem('Отримано координати кліку. Запуск 1км радіусного скану.');
@@ -437,7 +445,7 @@
 
                 // 3. Resolve status of the unique houses via our new POST /api/v1/status/batch endpoint
                 addLogItem('Відправляємо пакетний запит статусів до нашого API...');
-                
+
                 const batchItems = uniqueToQuery.map(item => ({
                     streetName: item.street,
                     houseName: item.house
@@ -478,7 +486,7 @@
                     const street = b.tags['addr:street'];
                     const house = b.tags['addr:housenumber'];
                     const key = `${street}||${house}`;
-                    
+
                     let status = 'UNKNOWN';
                     let mappingType = 'unknown';
 
@@ -489,13 +497,13 @@
                         // Filter out UNKNOWN statuses for extrapolation if possible
                         const validStreetStatuses = streetStatuses[street].filter(s => s.status !== 'UNKNOWN');
                         const listToUse = validStreetStatuses.length > 0 ? validStreetStatuses : streetStatuses[street];
-                        
+
                         if (listToUse.length > 0) {
                             // Find closest house on the same street
                             const targetNum = parseHouseNum(house);
                             let minDiff = Infinity;
                             let bestStatus = 'UNKNOWN';
-                            
+
                             listToUse.forEach(item => {
                                 const diff = Math.abs(item.houseNum - targetNum);
                                 if (diff < minDiff) {
@@ -514,7 +522,7 @@
 
                     // Render polygon
                     const coordinates = b.geometry.map(pt => [pt.lat, pt.lon]);
-                    
+
                     let color = '#4b5563'; // Grey (unknown)
                     let fillColor = '#4b5563';
                     let fillOpacity = 0.5;
@@ -539,7 +547,7 @@
                     // Add Tooltip/Popup details
                     const statusLabel = status === 'ON' ? 'СВІТЛО Є' : (status === 'UNKNOWN' ? 'Невідомо' : 'НЕМАЄ СВІТЛА');
                     const mappingLabel = mappingType === 'direct' ? 'Прямий запит' : (mappingType === 'propagated' ? 'Екстрапольовано' : 'Невідомо');
-                    
+
                     poly.bindPopup(`
                         <div style="font-size: 12px; line-height: 1.4;">
                             <div style="font-weight: 700; margin-bottom: 4px; color: ${status === 'ON' ? '#fb923c' : '#f3f4f6'};">
@@ -553,14 +561,14 @@
                             </div>
                         </div>
                     `);
-                    
+
                     buildingPolygonsLayer.addLayer(poly);
                 });
 
                 document.getElementById('progress-bar').style.width = '100%';
                 document.getElementById('stat-on').textContent = countOn;
                 document.getElementById('stat-off').textContent = countOff;
-                
+
                 addLogItem(`Успішно нанесено на карту. Будівель зі світлом: ${countOn}, без світла: ${countOff}.`);
                 document.getElementById('status-title-text').textContent = 'Аналіз завершено';
 
@@ -600,8 +608,8 @@
             const dLat = (lat2 - lat1) * Math.PI / 180;
             const dLon = (lon2 - lon1) * Math.PI / 180;
             const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
             return R * c;
         }
@@ -618,4 +626,5 @@
         }
     </script>
 </body>
+
 </html>
