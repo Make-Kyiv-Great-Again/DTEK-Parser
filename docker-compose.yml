@@ -34,19 +34,14 @@ services:
   overpass:
     image: wiktorn/overpass-api:latest
     container_name: local_overpass
-    ports:
-      - "12345:80"
     volumes:
       - overpass-db:/db
     healthcheck:
       disable: true
     environment:
       - OVERPASS_MODE=init
-      # Стабільне посилання на OSM екстракт Києва (BBBike)
       - OVERPASS_PLANET_URL=https://download.bbbike.org/osm/bbbike/Kiew/Kiew.osm.pbf
-      # Препроцесинг для конвертації PBF у формат OSM BZ2 за допомогою osmium
       - OVERPASS_PLANET_PREPROCESS=mv /db/planet.osm.bz2 /db/planet.osm.pbf && osmium cat -o /db/planet.osm.bz2 /db/planet.osm.pbf && rm /db/planet.osm.pbf && chmod -R 777 /db
-      # Вимикаємо оновлення метаданих
       - OVERPASS_META=no
     restart: always
     networks:
