@@ -11,6 +11,16 @@ class GeocodingService:
     def __init__(self):
         self.base_url = os.getenv("OVERPASS_INTERNAL_URL", "http://local_overpass/api/interpreter")
         self.timeout = settings.TIMEOUT_SECONDS
+        self._client = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=self.timeout)
+        return self._client
+
+    async def close(self):
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
 
     async def reverse_geocode(self, lat: float, lon: float) -> Dict[str, Any]:
         """
@@ -24,11 +34,11 @@ class GeocodingService:
 out center;"""
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                logger.debug(f"Sending geocoding query to local Overpass: {query}")
-                response = await client.post(self.base_url, data={"data": query})
-                response.raise_for_status()
-                data = response.json()
+            client = self._get_client()
+            logger.debug(f"Sending geocoding query to local Overpass: {query}")
+            response = await client.post(self.base_url, data={"data": query})
+            response.raise_for_status()
+            data = response.json()
         except Exception as e:
             err_msg = f"Failed to connect to local Overpass container for geocoding: {e}"
             logger.error(err_msg)

@@ -22,14 +22,40 @@ from app.core.exceptions import (
 from app.core.logger import request_context, setup_logging
 import uuid
 
+from contextlib import asynccontextmanager
+
 setup_logging()
 logger = logging.getLogger(__name__)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    logger.info("Shutting down application resources...")
+    from app.yasno.client import yasno_client
+    from app.places.client import overpass_client
+    from app.outages.geocoding import geocoding_service
+    from app.dtek.client import dtek_client
+    from app.core.cache import cache_service
+
+    for client, name in [
+        (yasno_client, "Yasno client"),
+        (overpass_client, "Overpass client"),
+        (geocoding_service, "Geocoding service client"),
+        (dtek_client, "Dtek client"),
+        (cache_service, "Cache service"),
+    ]:
+        try:
+            await client.close()
+            logger.info(f"Successfully closed {name}.")
+        except Exception as e:
+            logger.warning(f"Error closing {name}: {e}")
 
 # Initialize FastAPI App
 app = FastAPI(
     title="Yasno/DTEK Outage Parser & Map API",
     description="A production-ready FastAPI wrapper for Yasno blackout status schedules with Leaflet map.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS middleware config
